@@ -1,4 +1,4 @@
-# webp_server_rs
+# webp-server-rs
 Generate WebP image on-the-fly with Rust!
 
 THIS PROJECT IS WORKING IN PROGRESS, DON'T USE IT IN PRODUCTION ENVIRONMENT.
@@ -27,13 +27,13 @@ Well, in aforementioned blog post, I said that it would be better if it was writ
 
 - `webp_server` with `node_modules`: 43M
 - `webp-server(go)` single binary: 15M
-- `webp_server(rust)` single binary: 3.6M
+- `webp_server(rust)` single binary: 3.6M(macOS) / 6.4M(Linux)
 
 #### Convenience
 
 webp_server: Clone the repo -> npm install -> run with pm2
 webp-server(go): Download a single binary -> Run
-webp_server(rust): Download a single binary -> Run
+webpw-server(rust): Download a single binary -> Run
 
 #### Performance
 
@@ -46,9 +46,9 @@ Regarding the `img_path` section in config.json. If you are serving images at ht
 
 ### 1. Download or build the binary
 
-Download the webp-server from [release](https://github.com/BlueCocoa/webp_server_rs/releases) page.
+Download the webp-server from [release](https://github.com/BlueCocoa/webp-server-rs/releases) page.
 
-Wanna build your own binary? Check out [build](https://github.com/BlueCocoa/webp_server_rs#build-your-own-binaries) section
+Wanna build your own binary? Check out [build](https://github.com/BlueCocoa/webp-server-rs#build-your-own-binaries) section
 
 ### 2. config file
 
@@ -64,7 +64,7 @@ Create a config.json as follows to face your need.
 ```
 
 ### 3. Run
-Run the binary like this: `./webp_server_rs --config /path/to/config.json`
+Run the binary like this: `./webp-server-rs /path/to/config.json`
 
 #### screen or tmux
 
@@ -72,7 +72,7 @@ Use screen or tmux to avoid being terminated. Let's take screen for example
 
 ```bash
 screen -S webp
-./webp_server_rs --config /path/to/config.json
+./webp-server-rs /path/to/config.json
 ```
 
 #### systemd
@@ -88,7 +88,7 @@ systemctl start webp-image.service
 
 ### 4. Nginx proxy_pass
 
-Let Nginx to `proxy_pass http://localhost:3333/;`, and your `webp_server_rs` is on-the-fly
+Let Nginx to `proxy_pass http://localhost:3333/;`, and your `webp-server-rs` is on-the-fly
 
 #### WordPress example
 
@@ -102,8 +102,16 @@ location ^~ /wp-content/uploads/ {
 Install latest version of Rust, clone the repo, and then...
 
 ```bash
-# install libwebp with whatever package manager on your system (using ubuntu as example)
-# or you can build libwebp by yourself, and then place libwebp.a / libwebp.so in /usr/local/lib
-apt install -y libwebp6
+# install cmake with apt or whatever package manager on your system
+apt install cmake
+
+# download and build libwebp
+wget https://github.com/webmproject/libwebp/archive/v1.1.0.zip -O v1.1.0.zip
+unzip v1.1.0.zip
+mkdir -p libwebp-1.1.0/build && pushd libwebp-1.1.0/build
+cmake -D CMAKE_BUILD_TYPE=Release ..
+sudo make install
+
+# build webp-server-rs
 cargo build --release
 ```
