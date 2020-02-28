@@ -39,8 +39,20 @@ Well, in aforementioned blog post, I said that it would be better if it was writ
 
 Not really tested. But IMHO it should be as fast as golang version.
 
+### Supported Image Formats
+
+| Format | Decoding | Default On |
+| ------ | -------- | -------- |
+| PNG    | All supported color types | Yes |
+| JPEG   | Baseline and progressive | Yes |
+| BMP    | Yes | No |
+| ICO    | Yes | No |
+| TIFF   | Baseline(no fax support) + LZW + PackBits | No |
+| PNM    | PBM, PGM, PPM, standard PAM | No |
+| DDS    | DXT1, DXT3, DXT5 | No |
+
 ## Usage
-Shamefully copy and paste most of the usage text from [webp-sh/webp_server_go](https://github.com/webp-sh/webp_server_go), given that they are basically identical.
+Shamefully copy and paste most of the usage guidelines from [webp-sh/webp_server_go](https://github.com/webp-sh/webp_server_go), given that they are basically identical.
 
 Regarding the `img_path` section in config.json. If you are serving images at https://example.com/images/aya.jpg and your files are at /var/www/site/images/aya.jpg, then `img_path` shall be `/var/www/site`.
 
