@@ -102,8 +102,8 @@ location ^~ /wp-content/uploads/ {
 Install latest version of Rust, clone the repo, and then...
 
 ```bash
-# install cmake with apt or whatever package manager on your system
-apt install cmake
+# install cmake and unzip with apt or whatever package manager on your system
+apt install cmake unzip
 
 # download and build libwebp
 wget https://github.com/webmproject/libwebp/archive/v1.1.0.zip -O v1.1.0.zip
