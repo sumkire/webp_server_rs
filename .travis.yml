@@ -1,0 +1,27 @@
+language: rust
+
+cache:
+  cargo: true
+
+rust:
+  - stable
+  - beta
+  - nightly
+
+env:
+  global:
+    - RUST_BACKTRACE=1
+
+os:
+  - linux
+  - osx
+
+matrix:
+  fast_finish: true
+  allow_failures:
+    - rust: nightly
+
+before_script:
+  - curl https://github.com/webmproject/libwebp/archive/v1.1.0.tar.gz -o v1.1.0.tar.gz && tar xf v1.1.0.tar.gz
+  - mkdir -p libwebp-1.1.0/build && pushd libwebp-1.1.0/build
+  - cmake -D CMAKE_BUILD_TYPE=Release .. && sudo make install && popd
