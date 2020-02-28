@@ -135,3 +135,5 @@ popd
 cd webp_server_rs
 cargo build --release
 ```
+
+[![forthebadge](https://forthebadge.com/images/badges/contains-cat-gifs.svg)]()  [![forthebadge](https://forthebadge.com/images/badges/built-with-love.svg)]() 
