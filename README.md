@@ -111,7 +111,9 @@ unzip v1.1.0.zip
 mkdir -p libwebp-1.1.0/build && pushd libwebp-1.1.0/build
 cmake -D CMAKE_BUILD_TYPE=Release ..
 sudo make install
+popd
 
 # build webp-server-rs
+cd webp_server_rs
 cargo build --release
 ```
