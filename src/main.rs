@@ -22,13 +22,16 @@ use std::option::Option;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, StatusCode};
 
+macro_rules! generate_http_response_builder {
+    ($status_code:expr, $body:expr) => {{
+        Response::builder().status($status_code).body($body.into()).unwrap()
+    }};
+}
+
 macro_rules! generate_http_response {
     ($func_name:ident, $status_code:expr, $body:expr) => {
         fn $func_name() -> Response<Body> {
-            Response::builder()
-                .status($status_code)
-                .body($body.into())
-                .unwrap()
+            generate_http_response_builder!($status_code, $body)
         }
     };
 }
@@ -40,14 +43,8 @@ generate_http_response!(forbidden, StatusCode::FORBIDDEN, "Forbidden");
 macro_rules! sendfile {
     ($filename:expr) => {{
         match fs::read($filename).await {
-            Ok(buffer) => Response::builder()
-                .status(StatusCode::OK)
-                .body(buffer.into())
-                .unwrap(),
-            Err(_) => Response::builder()
-                .status(StatusCode::NOT_FOUND)
-                .body("Not Found".into())
-                .unwrap()
+            Ok(buffer) => generate_http_response_builder!(StatusCode::OK, buffer),
+            Err(_) => not_found(),
         }
     }};
 }
@@ -85,24 +82,13 @@ struct ImageMetadata {
     stride: i32
 }
 
-impl ImageMetadata {
-    fn with(width: i32, height: i32, data_ptr: *const u8, stride: i32) -> ImageMetadata {
-        ImageMetadata {
-            width: width as i32,
-            height: height as i32,
-            data_ptr,
-            stride,
-        }
-    }
-}
-
 macro_rules! get_image_metadata {
-    ($image:expr, $bytes_per_pixel:expr) => {{
+    ($image:expr, $components_per_pixel:expr) => {{
         let width = $image.width() as i32;
         let height = $image.height() as i32;
         let data_ptr = $image.into_raw().as_ptr();
-        let stride = width * $bytes_per_pixel;
-        ImageMetadata::with(width, height, data_ptr, stride)
+        let stride = width * $components_per_pixel;
+        ImageMetadata { width, height, data_ptr, stride }
     }};
 }
 
@@ -110,13 +96,9 @@ macro_rules! get_image_metadata {
 async fn main() {
     let (host, port) = get_server_listen_options();
     let addr = format!("{}:{}", host, port).parse().unwrap();
-
-    let make_service =
-        make_service_fn(|_| async { Ok::<_, hyper::Error>(service_fn(webp_services)) });
-    let server = Server::bind(&addr).serve(make_service);
+    let server = Server::bind(&addr).serve(make_service_fn(|_| async { Ok::<_, hyper::Error>(service_fn(webp_services)) }));
 
     println!("WebP image service on http://{}", addr);
-
     if let Err(e) = server.await {
         eprintln!("server error: {}", e);
     }
@@ -150,12 +132,9 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
 
         // Check for Safari users
         let is_safari = match req.headers().get("user-agent") {
-            Some(ua) => {
-                let ua = match ua.to_str() {
-                    Ok(ua) => ua,
-                    Err(_) => "",
-                };
-                ua.contains("Safari") && !ua.contains("Chrome") && !ua.contains("Firefox")
+            Some(ua) => match ua.to_str() {
+                Ok(ua) => ua.contains("Safari") && !ua.contains("Chrome") && !ua.contains("Firefox"),
+                Err(_) => false,
             },
             _ => false,
         };
@@ -181,13 +160,11 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
 
         // 1582735380
         let modified_time = match std::fs::metadata(&img_absolute_path) {
-            Ok(metadata) => {
-                match metadata.modified() {
-                    Ok(modified_time) => modified_time.duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_secs(),
-                    Err(e) => {
-                        eprintln!("{}", e);
-                        0
-                    }
+            Ok(metadata) => match metadata.modified() {
+                Ok(modified_time) => modified_time.duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_secs(),
+                Err(e) => {
+                    eprintln!("{}", e);
+                    0
                 }
             },
             Err(e) => {
@@ -232,7 +209,7 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
                 _ => {
                     // remove old webp files
                     // /var/www/cache/path/to/aya.jpg.1582735300.webp <- older ones will be removed
-                    // //var/www/cache/path/to/aya.jpg.1582735380.webp <- keep the latest one
+                    // /var/www/cache/path/to/aya.jpg.1582735380.webp <- keep the latest one
                     let mut glob_pattern = String::from(webp_dir_absolute_path.to_str().unwrap());
                     glob_pattern.push_str(&format!("{}.*.webp", img_name));
 
@@ -275,11 +252,11 @@ fn convert(original_file_path: &str, webp_file_path: &str) -> Result<(), io::Err
                     encoded_size = encode_to_webp_image!(WebPEncodeLosslessRGB, metadata, &encoded_data);
                 }
                 image::DynamicImage::ImageBgra8(image) => {
-                    metadata = get_image_metadata!(image, 3);
+                    metadata = get_image_metadata!(image, 4);
                     encoded_size = encode_to_webp_image!(WebPEncodeLosslessBGRA, metadata, &encoded_data);
                 },
                 image::DynamicImage::ImageRgba8(image) => {
-                    metadata = get_image_metadata!(image, 3);
+                    metadata = get_image_metadata!(image, 4);
                     encoded_size = encode_to_webp_image!(WebPEncodeLosslessRGBA, metadata, &encoded_data);
                 }
                 image::DynamicImage::ImageRgb16(_) => {
@@ -317,10 +294,8 @@ fn convert(original_file_path: &str, webp_file_path: &str) -> Result<(), io::Err
 
 fn from_cli_args() -> WebPServerConfig {
     let args: Vec<String> = std::env::args().collect();
-    let config_path;
-    if args.len() < 2 {
-        config_path = "./config.json";
-    } else {
+    let mut config_path = "./config.json";
+    if args.len() >= 2 {
         config_path = &*args[1];
     }
     match load_config(config_path) {
@@ -330,28 +305,17 @@ fn from_cli_args() -> WebPServerConfig {
 }
 
 fn load_config<P: AsRef<Path>>(conf_path: P) -> Result<WebPServerConfig, Box<dyn std::error::Error>> {
-    // https://docs.serde.rs/serde_json/fn.from_reader.html#example
-
-    // Open the file in read-only mode with buffer.
     let file = std::fs::File::open(conf_path)?;
-
     let reader = BufReader::new(file);
-
-    // Read the JSON contents of the file as an instance of `BoxyConfig`.
     let u = serde_json::from_reader(reader)?;
-
-    // Return the `WebPServerConfig`
     Ok(u)
 }
 
 fn get_server_listen_options() -> (String, u16) {
-    let host: String = match &CONFIG.host {
-        Some(host) => match host.len() {
-            0 => String::from("127.0.0.1"),
-            _ => String::from(host),
-        },
-        _ => String::from("127.0.0.1"),
-    };
+    let mut host = String::from("127.0.0.1");
+    if let Some(custom_host) = &CONFIG.host {
+        host = String::from(custom_host);
+    }
     let port: u16 = match &CONFIG.port {
         Some(port) => *port,
         _ => 3333,
