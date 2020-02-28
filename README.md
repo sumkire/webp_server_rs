@@ -41,8 +41,8 @@ Not really tested. But IMHO it should be as fast as golang version.
 
 ### Supported Image Formats
 
-| Format | Decoding | Default On |
-| ------ | -------- | -------- |
+| Format | Converting | Default On |
+| ------ | ---------- | ---------- |
 | PNG    | All supported color types | Yes |
 | JPEG   | Baseline and progressive | Yes |
 | BMP    | Yes | No |
@@ -50,6 +50,8 @@ Not really tested. But IMHO it should be as fast as golang version.
 | TIFF   | Baseline(no fax support) + LZW + PackBits | No |
 | PNM    | PBM, PGM, PPM, standard PAM | No |
 | DDS    | DXT1, DXT3, DXT5 | No |
+
+Currently, only image with one of RGB8 / BGR8 / RGBA8 / BGRA8 colorspace will be convert to WebP image. 
 
 ## Usage
 Shamefully copy and paste most of the usage guidelines from [webp-sh/webp_server_go](https://github.com/webp-sh/webp_server_go), given that they are basically identical.
@@ -59,6 +61,8 @@ Regarding the `img_path` section in config.json. If you are serving images at ht
 ### 1. Download or build the binary
 
 Download the webp-server from [release](https://github.com/BlueCocoa/webp-server-rs/releases) page.
+
+The `webp-server-rs-${ver}-linux-amd64.deb` package will ONLY INSTALL the binary to `/usr/local/bin/webp-server-rs`, the config file needs to be edited following the guideline below.
 
 Wanna build your own binary? Check out [build](#build-your-own-binaries) section
 
@@ -97,6 +101,8 @@ systemctl daemon-reload
 systemctl enable webp-image.service
 systemctl start webp-image.service
 ```
+
+This systemd service script will assume that the binary is located at `/usr/local/bin/webp-server-rs` and the config file is located at `/etc/webp-server-rs/config.json`. It also uses `/var/cache/webps` as working directory.
 
 ### 4. Nginx proxy_pass
 
