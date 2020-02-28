@@ -48,7 +48,7 @@ Regarding the `img_path` section in config.json. If you are serving images at ht
 
 Download the webp-server from [release](https://github.com/BlueCocoa/webp-server-rs/releases) page.
 
-Wanna build your own binary? Check out [build](https://github.com/BlueCocoa/webp-server-rs#build-your-own-binaries) section
+Wanna build your own binary? Check out [build](#build-your-own-binaries) section
 
 ### 2. config file
 
