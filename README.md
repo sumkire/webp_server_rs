@@ -31,16 +31,16 @@ Well, in aforementioned blog post, I said that it would be better if it was writ
 
 #### Convenience
 
-webp_server: Clone the repo -> npm install -> run with pm2
-webp-server(go): Download a single binary -> Run
-webpw-server(rust): Download a single binary -> Run
+- webp_server: Clone the repo -> npm install -> run with pm2
+- webp-server(go): Download a single binary -> Run
+- webp-server(rust): Download a single binary -> Run
 
 #### Performance
 
 Not really tested. But IMHO it should be as fast as golang version.
 
 ## Usage
-Shamefully copy and paste most of the usage test from [webp-sh/webp_server_go](https://github.com/webp-sh/webp_server_go), given that they are basically identical.
+Shamefully copy and paste most of the usage text from [webp-sh/webp_server_go](https://github.com/webp-sh/webp_server_go), given that they are basically identical.
 
 Regarding the `img_path` section in config.json. If you are serving images at https://example.com/images/aya.jpg and your files are at /var/www/site/images/aya.jpg, then `img_path` shall be `/var/www/site`.
 
