@@ -1,4 +1,4 @@
-# webp-server-rs
+# webp-server-rs ![Build Status](https://travis-ci.com/BlueCocoa/webp_server_rs.svg?branch=master)
 Generate WebP image on-the-fly with Rust!
 
 THIS PROJECT IS WORKING IN PROGRESS, DON'T USE IT IN PRODUCTION ENVIRONMENT.
