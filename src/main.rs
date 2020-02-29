@@ -40,7 +40,6 @@ macro_rules! generate_http_response {
 
 generate_http_response!(not_found, StatusCode::NOT_FOUND, "Not Found");
 generate_http_response!(method_not_allowed, StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
-generate_http_response!(forbidden, StatusCode::FORBIDDEN, "Forbidden");
 
 macro_rules! sendfile {
     ($filename:expr) => {{
@@ -79,9 +78,31 @@ struct WebPServerConfig {
     host: Option<String>,
     port: Option<u16>,
     img_path: String,
-    allowed_types: Vec<String>,
     quality: f32,
     mode: i32,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+struct DirectoryLevelConfig {
+    quality: f32,
+    mode: i32,
+}
+
+impl DirectoryLevelConfig {
+    fn detect(directory_path: &str) -> DirectoryLevelConfig {
+        let config = DirectoryLevelConfig { quality: CONFIG.quality,  mode: CONFIG.mode };
+        let mut directory_level_config_path = PathBuf::from(directory_path);
+        directory_level_config_path.push(".webp-conf");
+        match std::fs::File::open(directory_level_config_path.as_path()) {
+            Ok(file) => {
+                match serde_json::from_reader(BufReader::new(file)) {
+                    Ok(conf) => conf,
+                    _ => config,
+                }
+            },
+            _ => config,
+        }
+    }
 }
 
 lazy_static! {
@@ -122,26 +143,16 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
         Ok(method_not_allowed())
     } else {
         // /path/to/aya.jpg
-        let img_path = req.uri().path();
-        // /IMG_PATH/path/to
+        let img_uri_path = req.uri().path();
+        // /IMG_PATH/path/to/aya.jpg
         let mut img_absolute_path = PathBuf::from(&CONFIG.img_path);
-        img_absolute_path.push(&img_path[1..]);
+        img_absolute_path.push(&img_uri_path[1..]);
 
         // Check the original image for existence and ensure its a file
         let original_img_exists = img_absolute_path.exists();
         if !original_img_exists || !img_absolute_path.is_file() {
             return Ok(not_found());
         }
-
-        // Check file extension
-        let ext = match img_absolute_path.extension() {
-            Some(ext) => ext.to_str().unwrap_or(""),
-            _ => "",
-        };
-        match &CONFIG.allowed_types.iter().position(|r| r == ext) {
-            Some(_) => (),
-            _ => return Ok(forbidden()),
-        };
 
         // Check for Safari users
         let is_safari = match req.headers().get("user-agent") {
@@ -158,9 +169,13 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
         // aya.jpg
         let img_name = img_absolute_path.file_name().unwrap().to_str().unwrap();
         // /path/to
-        let mut dir_absolute_path = PathBuf::from(&img_path);
+        let mut dir_uri_path = PathBuf::from(&img_uri_path);
+        dir_uri_path.pop();
+        let dir_uri_path = dir_uri_path.to_str().unwrap();
+        // /IMG_PATH/path/to/
+        let mut dir_absolute_path = PathBuf::from(&img_absolute_path);
         dir_absolute_path.pop();
-        let dir_name = dir_absolute_path.to_str().unwrap();
+        let dir_absolute_path = dir_absolute_path.to_str().unwrap();
 
         // /var/www
         let cwd = match env::current_dir() {
@@ -195,7 +210,7 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
         // /var/www/cache/path/to
         let mut webp_dir_absolute_path = PathBuf::from(&cwd);
         webp_dir_absolute_path.push("cache");
-        webp_dir_absolute_path.push(&dir_name[1..]);
+        webp_dir_absolute_path.push(&dir_uri_path[1..]);
 
         // /var/www/cache/path/to/aya.jpg.1582735380.webp
         let mut webp_img_absolute_path = PathBuf::from(&webp_dir_absolute_path);
@@ -212,8 +227,11 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
                     return Ok(sendfile!(img_absolute_path.to_str().unwrap()));
                 }
             };
+
+            let directory_level_config = DirectoryLevelConfig::detect(dir_absolute_path);
+
             // try to convert image to webp format
-            return match convert(img_absolute_path.to_str().unwrap(), webp_img_absolute_path.to_str().unwrap(), CONFIG.quality, CONFIG.mode) {
+            return match convert(img_absolute_path.to_str().unwrap(), webp_img_absolute_path.to_str().unwrap(), directory_level_config.quality, directory_level_config.mode) {
                 Err(e) => {
                     // send original file if failed
                     eprintln!("{}", e);

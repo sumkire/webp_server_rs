@@ -85,6 +85,77 @@ There are 3 possible values for `mode`,
 - `2` stands for `near lossless`, `quality` parameter will be used to reduce the size of output image
 - `3` stands for `lossy`, `quality` parameter will be used to reduce the size of output image
 
+#### Directory-Level Config
+
+By placing a `.webp-conf` in intented directories, you can control the encoding `mode` and `quality` applied on the images inside that directory (the directory-level config will NOT propagate to its subdirectories).
+
+If there is no directory level config file (`.webp-conf`) in the directory, then parameters in `config.json` will be used.
+
+For example, we have such file layout
+
+```
+images
+├── lossless
+│   ├── .webp-conf
+│   └── webp-server.jpeg (480911 bytes)
+├── lossy
+│   ├── .webp-conf
+│   └── webp-server.jpeg (480911 bytes)
+├── nearlossless
+│   ├── .webp-conf
+│   └── webp-server.jpeg (480911 bytes)
+└── webp-server.jpeg (480911 bytes)
+```
+
+And the config files,
+`config.json`, `mode = 2` => near lossless encoding, quality will be used to reduce the size of output image
+```json
+{
+    "host": "127.0.0.1",
+    "port": 3333,
+    "img_path": "./images",
+    "quality": 70,
+    "mode": 2
+}
+```
+
+`images/lossless/.webp-conf`, `mode = 1` => lossless encoding, quality will be ignored (but still required in the config file)
+```json
+{
+    "mode": 1,
+    "quality": 90
+}
+```
+
+`images/nearlossless/.webp-conf`, `mode = 2` => near lossless encoding, quality will be used to reduce the size of output image
+```json
+{
+    "mode": 2,
+    "quality": 90
+}
+```
+
+`images/lossy/.webp-conf`, mode = 3 => lossy encoding, quality will be used to reduce the size of output image
+```json
+{
+    "mode": 3,
+    "quality": 40
+}
+```
+
+And corresponding WebP images will be generated based on aforementioned rules,
+
+```
+cache
+├── lossless
+│   └── webp-server.jpeg.1579413991.webp (1647444 bytes)
+├── lossy
+│   └── webp-server.jpeg.1579413991.webp (160502 bytes)
+├── nearlossless
+│   └── webp-server.jpeg.1579413991.webp (497342 bytes)
+└── webp-server.jpeg.1579413991.webp (242808 bytes)
+```
+
 ### 3. Run
 Run the binary like this: `./webp-server-rs /path/to/config.json`
 
@@ -102,7 +173,7 @@ screen -S webp
 Don't worry, we've got you covered!
 
 ```bash
-cp webp-image.service /lib/systemd/systemd/
+cp webp-image.service /lib/systemd/system/
 systemctl daemon-reload
 systemctl enable webp-image.service
 systemctl start webp-image.service
@@ -117,7 +188,7 @@ Let Nginx to `proxy_pass http://localhost:3333/;`, and your `webp-server-rs` is 
 #### WordPress example
 
 ```
-location ^~ /wp-content/uploads/ {
+location ~* \.(png|jpg|jpeg)$ {
     proxy_pass http://127.0.0.1:3333;
 }
 ```
