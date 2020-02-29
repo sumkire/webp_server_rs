@@ -26,8 +26,8 @@ Well, in aforementioned blog post, I said that it would be better if it was writ
 #### Size
 
 - `webp_server` with `node_modules`: 43M
-- `webp-server(go)` single binary: 15M
-- `webp_server(rust)` single binary: 2M(macOS) / 6.4M(Linux)
+- `webp-server(go)` single binary: 9.38M
+- `webp_server(rust)` single binary: 1.89M(macOS) / 2.38M(Linux)
 
 #### Convenience
 
