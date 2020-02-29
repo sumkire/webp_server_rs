@@ -21,6 +21,8 @@ use std::option::Option;
 
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, StatusCode};
+use std::ffi::c_void;
+use std::os::raw::c_float;
 
 macro_rules! generate_http_response_builder {
     ($status_code:expr, $body:expr) => {{
@@ -51,15 +53,24 @@ macro_rules! sendfile {
 
 #[link(name = "webp", kind = "static")]
 extern {
-    fn WebPEncodeLosslessRGB(rgb: *const u8, width: c_int, height: c_int, stride: c_int, output: &*mut c_uchar) -> size_t;
-    fn WebPEncodeLosslessBGR(bgr: *const u8, width: c_int, height: c_int, stride: c_int, output: &*mut c_uchar) -> size_t;
-    fn WebPEncodeLosslessRGBA(rgba: *const u8, width: c_int, height: c_int, stride: c_int, output: &*mut c_uchar) -> size_t;
-    fn WebPEncodeLosslessBGRA(bgra: *const u8, width: c_int, height: c_int, stride: c_int, output: &*mut c_uchar) -> size_t;
+    fn WebPPictureImportRGB(picture: *mut c_void, rgb: *const u8, rgb_stride: c_int) -> c_int;
+    fn WebPPictureImportRGBA(picture: *mut c_void, rgb: *const u8, rgb_stride: c_int) -> c_int;
+    fn WebPPictureImportBGR(picture: *mut c_void, rgb: *const u8, rgb_stride: c_int) -> c_int;
+    fn WebPPictureImportBGRA(picture: *mut c_void, rgb: *const u8, rgb_stride: c_int) -> c_int;
+}
+
+#[link(name = "webpwrapper", kind = "static")]
+extern {
+    fn webp_encoder(rgba: *const u8, width: c_int, height: c_int, stride: c_int,
+              importer: unsafe extern "C" fn(*mut c_void, *const u8, c_int) -> c_int,
+              quality_factor: c_float, encode_type: c_int, output: &*mut c_uchar
+    ) -> size_t;
 }
 
 macro_rules! encode_to_webp_image {
-    ($using_encoder:ident, $metadata:expr, $output:expr) => {
-        unsafe { $using_encoder($metadata.data_ptr, $metadata.width, $metadata.height, $metadata.stride, $output) }
+    ($using_importer:ident, $metadata:expr, $quality:expr, $lossless:expr, $output:expr) => {
+        unsafe { webp_encoder($metadata.data_ptr, $metadata.width, $metadata.height, $metadata.stride,
+                              $using_importer, $quality, $lossless, $output) }
     };
 }
 
@@ -69,6 +80,8 @@ struct WebPServerConfig {
     port: Option<u16>,
     img_path: String,
     allowed_types: Vec<String>,
+    quality: f32,
+    mode: i32,
 }
 
 lazy_static! {
@@ -200,7 +213,7 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
                 }
             };
             // try to convert image to webp format
-            return match convert(img_absolute_path.to_str().unwrap(), webp_img_absolute_path.to_str().unwrap()) {
+            return match convert(img_absolute_path.to_str().unwrap(), webp_img_absolute_path.to_str().unwrap(), CONFIG.quality, CONFIG.lossless as i32) {
                 Err(e) => {
                     // send original file if failed
                     eprintln!("{}", e);
@@ -231,7 +244,7 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
     }
 }
 
-fn convert(original_file_path: &str, webp_file_path: &str) -> Result<(), io::Error> {
+fn convert(original_file_path: &str, webp_file_path: &str, quality: c_float, lossless: c_int) -> Result<(), io::Error> {
     let mut file = std::fs::File::open(original_file_path)?;
     let mut buffer: Vec<u8> = Vec::new();
     file.read_to_end(&mut buffer)?;
@@ -245,37 +258,27 @@ fn convert(original_file_path: &str, webp_file_path: &str) -> Result<(), io::Err
             match image {
                 image::DynamicImage::ImageBgr8(image) => {
                     metadata = get_image_metadata!(image, 3);
-                    encoded_size = encode_to_webp_image!(WebPEncodeLosslessBGR, metadata, &encoded_data);
+                    encoded_size = encode_to_webp_image!(WebPPictureImportBGR, metadata, quality, lossless, &encoded_data);
                 },
                 image::DynamicImage::ImageRgb8(image) => {
                     metadata = get_image_metadata!(image, 3);
-                    encoded_size = encode_to_webp_image!(WebPEncodeLosslessRGB, metadata, &encoded_data);
+                    encoded_size = encode_to_webp_image!(WebPPictureImportRGB, metadata, quality, lossless, &encoded_data);
                 }
                 image::DynamicImage::ImageBgra8(image) => {
                     metadata = get_image_metadata!(image, 4);
-                    encoded_size = encode_to_webp_image!(WebPEncodeLosslessBGRA, metadata, &encoded_data);
+                    encoded_size = encode_to_webp_image!(WebPPictureImportBGRA, metadata, quality, lossless, &encoded_data);
                 },
                 image::DynamicImage::ImageRgba8(image) => {
                     metadata = get_image_metadata!(image, 4);
-                    encoded_size = encode_to_webp_image!(WebPEncodeLosslessRGBA, metadata, &encoded_data);
+                    encoded_size = encode_to_webp_image!(WebPPictureImportRGBA, metadata, quality, lossless, &encoded_data);
                 }
-                image::DynamicImage::ImageRgb16(_) => {
-                    return Err(std::io::Error::new( std::io::ErrorKind::Other, format!("{} is RGB16, which is not supported yet", original_file_path) ));
+                image::DynamicImage::ImageRgb16(_) | image::DynamicImage::ImageLuma8(_) | image::DynamicImage::ImageLuma16(_) => {
+                    metadata = get_image_metadata!(image.to_rgb(), 3);
+                    encoded_size = encode_to_webp_image!(WebPPictureImportRGB, metadata, quality, lossless, &encoded_data);
                 },
-                image::DynamicImage::ImageRgba16(_) => {
-                    return Err(std::io::Error::new( std::io::ErrorKind::Other, format!("{} is RGBA16, which is not supported yet", original_file_path) ));
-                }
-                image::DynamicImage::ImageLuma8(_) => {
-                    return Err(std::io::Error::new( std::io::ErrorKind::Other, format!("{} is Luma8, which is not supported yet", original_file_path) ));
-                },
-                image::DynamicImage::ImageLumaA8(_) => {
-                    return Err(std::io::Error::new( std::io::ErrorKind::Other, format!("{} is LumaA8, which is not supported yet", original_file_path) ));
-                },
-                image::DynamicImage::ImageLuma16(_) => {
-                    return Err(std::io::Error::new( std::io::ErrorKind::Other, format!("{} is Luma16, which is not supported yet", original_file_path) ));
-                },
-                image::DynamicImage::ImageLumaA16(_) => {
-                    return Err(std::io::Error::new( std::io::ErrorKind::Other, format!("{} is LumaA8, which is not supported yet", original_file_path) ));
+                image::DynamicImage::ImageRgba16(_) | image::DynamicImage::ImageLumaA8(_) | image::DynamicImage::ImageLumaA16(_) => {
+                    metadata = get_image_metadata!(image.to_rgba(), 4);
+                    encoded_size = encode_to_webp_image!(WebPPictureImportRGBA, metadata, quality, lossless, &encoded_data);
                 }
             };
 

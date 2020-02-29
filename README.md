@@ -51,8 +51,6 @@ Not really tested. But IMHO it should be as fast as golang version.
 | PNM    | PBM, PGM, PPM, standard PAM | No |
 | DDS    | DXT1, DXT3, DXT5 | No |
 
-Currently, only image with one of RGB8 / BGR8 / RGBA8 / BGRA8 colorspace will be convert to WebP image. 
-
 ## Usage
 Shamefully copy and paste most of the usage guidelines from [webp-sh/webp_server_go](https://github.com/webp-sh/webp_server_go), given that they are basically identical.
 
@@ -74,10 +72,18 @@ Create a config.json as follows to face your need.
 {
     "host": "127.0.0.1",
     "port": 3333,
-    "img_path": "/path/to/images",
-    "allowed_types": ["jpg","png","jpeg"]
+    "img_path": "./images",
+    "allowed_types": ["jpg","png","jpeg"],
+    "quality": 90,
+    "mode": 1
 }
 ```
+
+There are 3 possible values for `mode`,
+
+- `1` stands for `lossless`, `quality` parameter will be ignored
+- `2` stands for `near lossless`, `quality` parameter will be used to reduce the size of output image
+- `3` stands for `lossy`, `quality` parameter will be used to reduce the size of output image
 
 ### 3. Run
 Run the binary like this: `./webp-server-rs /path/to/config.json`
@@ -130,6 +136,9 @@ mkdir -p libwebp-1.1.0/build && pushd libwebp-1.1.0/build
 cmake -D CMAKE_BUILD_TYPE=Release ..
 sudo make install
 popd
+
+# build webpwrapper
+make
 
 # build webp-server-rs
 cd webp_server_rs

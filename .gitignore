@@ -5,3 +5,6 @@
 Cargo.lock
 target/*
 
+webpwrapper.o
+lib/libwebpwrapper.a
+
