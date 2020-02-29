@@ -213,7 +213,7 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
                 }
             };
             // try to convert image to webp format
-            return match convert(img_absolute_path.to_str().unwrap(), webp_img_absolute_path.to_str().unwrap(), CONFIG.quality, CONFIG.lossless as i32) {
+            return match convert(img_absolute_path.to_str().unwrap(), webp_img_absolute_path.to_str().unwrap(), CONFIG.quality, CONFIG.mode) {
                 Err(e) => {
                     // send original file if failed
                     eprintln!("{}", e);
@@ -244,7 +244,7 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
     }
 }
 
-fn convert(original_file_path: &str, webp_file_path: &str, quality: c_float, lossless: c_int) -> Result<(), io::Error> {
+fn convert(original_file_path: &str, webp_file_path: &str, quality: f32, mode: i32) -> Result<(), io::Error> {
     let mut file = std::fs::File::open(original_file_path)?;
     let mut buffer: Vec<u8> = Vec::new();
     file.read_to_end(&mut buffer)?;
@@ -258,27 +258,27 @@ fn convert(original_file_path: &str, webp_file_path: &str, quality: c_float, los
             match image {
                 image::DynamicImage::ImageBgr8(image) => {
                     metadata = get_image_metadata!(image, 3);
-                    encoded_size = encode_to_webp_image!(WebPPictureImportBGR, metadata, quality, lossless, &encoded_data);
+                    encoded_size = encode_to_webp_image!(WebPPictureImportBGR, metadata, quality, mode, &encoded_data);
                 },
                 image::DynamicImage::ImageRgb8(image) => {
                     metadata = get_image_metadata!(image, 3);
-                    encoded_size = encode_to_webp_image!(WebPPictureImportRGB, metadata, quality, lossless, &encoded_data);
+                    encoded_size = encode_to_webp_image!(WebPPictureImportRGB, metadata, quality, mode, &encoded_data);
                 }
                 image::DynamicImage::ImageBgra8(image) => {
                     metadata = get_image_metadata!(image, 4);
-                    encoded_size = encode_to_webp_image!(WebPPictureImportBGRA, metadata, quality, lossless, &encoded_data);
+                    encoded_size = encode_to_webp_image!(WebPPictureImportBGRA, metadata, quality, mode, &encoded_data);
                 },
                 image::DynamicImage::ImageRgba8(image) => {
                     metadata = get_image_metadata!(image, 4);
-                    encoded_size = encode_to_webp_image!(WebPPictureImportRGBA, metadata, quality, lossless, &encoded_data);
+                    encoded_size = encode_to_webp_image!(WebPPictureImportRGBA, metadata, quality, mode, &encoded_data);
                 }
                 image::DynamicImage::ImageRgb16(_) | image::DynamicImage::ImageLuma8(_) | image::DynamicImage::ImageLuma16(_) => {
                     metadata = get_image_metadata!(image.to_rgb(), 3);
-                    encoded_size = encode_to_webp_image!(WebPPictureImportRGB, metadata, quality, lossless, &encoded_data);
+                    encoded_size = encode_to_webp_image!(WebPPictureImportRGB, metadata, quality, mode, &encoded_data);
                 },
                 image::DynamicImage::ImageRgba16(_) | image::DynamicImage::ImageLumaA8(_) | image::DynamicImage::ImageLumaA16(_) => {
                     metadata = get_image_metadata!(image.to_rgba(), 4);
-                    encoded_size = encode_to_webp_image!(WebPPictureImportRGBA, metadata, quality, lossless, &encoded_data);
+                    encoded_size = encode_to_webp_image!(WebPPictureImportRGBA, metadata, quality, mode, &encoded_data);
                 }
             };
 
