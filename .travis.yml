@@ -1,4 +1,7 @@
 language: rust
+script:
+  - make
+  - cargo build --verbose --all
 
 cache:
   cargo: true
@@ -25,3 +28,4 @@ before_script:
   - curl https://codeload.github.com/webmproject/libwebp/tar.gz/v1.1.0 -o v1.1.0.tar.gz && tar -xzf v1.1.0.tar.gz
   - mkdir -p libwebp-1.1.0/build && pushd libwebp-1.1.0/build
   - cmake -D CMAKE_BUILD_TYPE=Release .. && sudo make install && popd
+
