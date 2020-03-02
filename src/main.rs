@@ -1,28 +1,35 @@
 #[macro_use]
 extern crate lazy_static;
+extern crate crossbeam_utils;
 extern crate libc;
-
-use libc::{size_t, c_int, c_uchar};
-use std::io;
-use std::io::prelude::*;
-use std::string::String;
-use image;
-use std::ptr::null_mut;
-use std::io::BufReader;
-use std::path::{Path, PathBuf};
-use std::env;
-use glob::glob;
-use tokio::fs;
-
+extern crate getopts;
 extern crate serde;
 
-use serde::Deserialize;
-use std::option::Option;
-
+use crossbeam_channel::{unbounded, bounded};
+use crossbeam_utils::thread;
+use getopts::Options;
+use glob::glob;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, StatusCode};
+use image;
+use libc::{size_t, c_int, c_uchar};
+use num_cpus;
+use serde::Deserialize;
 use std::ffi::c_void;
+use std::io;
+use std::io::prelude::*;
+use std::io::BufReader;
+use std::option::Option;
 use std::os::raw::c_float;
+use std::path::{Path, PathBuf};
+use std::ptr::null_mut;
+use std::string::String;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::SystemTime;
+use tokio::fs;
+use std::cmp::{max, min};
+use walkdir::WalkDir;
 
 macro_rules! generate_http_response_builder {
     ($status_code:expr, $body:expr) => {{
@@ -78,6 +85,7 @@ struct WebPServerConfig {
     host: Option<String>,
     port: Option<u16>,
     img_path: String,
+    webp_path: String,
     quality: f32,
     mode: i32,
 }
@@ -105,9 +113,17 @@ impl DirectoryLevelConfig {
     }
 }
 
+#[derive(Debug, Clone)]
+struct PrefetchConfig {
+    enabled: bool,
+    jobs: usize,
+}
+
 lazy_static! {
     static ref CONFIG: WebPServerConfig = from_cli_args();
 }
+
+static mut PREFETCH: PrefetchConfig = PrefetchConfig { enabled: false, jobs: 1 };
 
 struct ImageMetadata {
     width: i32,
@@ -131,10 +147,163 @@ async fn main() {
     let (host, port) = get_server_listen_options();
     let addr = format!("{}:{}", host, port).parse().unwrap();
     let server = Server::bind(&addr).serve(make_service_fn(|_| async { Ok::<_, hyper::Error>(service_fn(webp_services)) }));
-
+    prefetch_if_requested();
     println!("WebP image service on http://{}", addr);
     if let Err(e) = server.await {
         eprintln!("server error: {}", e);
+    }
+}
+
+fn prefetch_if_requested() {
+    let prefetch = unsafe { PREFETCH.clone() };
+    let img_path: String = CONFIG.img_path.clone();
+    let img_path_len = img_path.len();
+    if prefetch.enabled {
+        std::thread::spawn(move || {
+            println!("[INFO] Prefetch Started");
+            let now = SystemTime::now();
+            let (walkdir_sender, walkdir_receiver) = unbounded::<(PathBuf, String)>();
+            let (convert_sender, convert_receiver) = bounded::<(PathBuf, String)>(prefetch.jobs);
+            thread::scope(|s| {
+                let filecount: Arc::<AtomicU64> = Arc::new(AtomicU64::new(0));
+                let filecount_copy = Arc::clone(&filecount);
+
+                let walkdir_done: Arc::<AtomicBool> = Arc::new(AtomicBool::new(false));
+                let walkdir_done_copy1 = Arc::clone(&walkdir_done);
+                let walkdir_done_copy2 = Arc::clone(&walkdir_done);
+
+                s.spawn(move |_| {
+                    let mut should_wait = true;
+                    let mut current_num = 0usize;
+                    while should_wait {
+                        match convert_receiver.recv_timeout(std::time::Duration::new(1, 0)) {
+                            Err(_) => should_wait = !walkdir_done_copy2.load(Ordering::SeqCst),
+                            Ok(recv) => {
+                                current_num += 1;
+                                print!("\r[INFO] Prefetch Progress: [{}/{}]", current_num, filecount_copy.load(Ordering::SeqCst));
+                                let _ = std::io::stdout().flush();
+
+                                let img_absolute_path = recv.0;
+                                let img_uri_path = recv.1;
+
+                                let webp_converted_paths = generate_webp_paths(&img_absolute_path, &img_uri_path);
+                                let webp_img_absolute_path = webp_converted_paths.0;
+
+                                if webp_img_absolute_path.exists() {
+                                    continue;
+                                }
+
+                                let webp_dir_absolute_path = webp_converted_paths.1;
+                                let dir_absolute_path = webp_converted_paths.2.to_str().unwrap();
+
+                                let directory_level_config = match std::fs::create_dir_all(&webp_dir_absolute_path) {
+                                    Err(_) => continue,
+                                    _ => DirectoryLevelConfig::detect(dir_absolute_path),
+                                };
+
+                                // try to convert image to webp format
+                                match convert(img_absolute_path.to_str().unwrap(), webp_img_absolute_path.to_str().unwrap(), directory_level_config.quality, directory_level_config.mode) {
+                                    Err(_) => (),
+                                    _ => remove_old_cached_webp(&webp_img_absolute_path, &webp_dir_absolute_path, &img_absolute_path),
+                                };
+                            }
+                        }
+                    }
+                    println!("\n[INFO] Prefetch Done, elapsed time: {:.4} seconds", now.elapsed().unwrap().as_secs_f32());
+                });
+
+                s.spawn(move |_| {
+                    let mut should_wait = true;
+                    while should_wait {
+                        match walkdir_receiver.recv_timeout(std::time::Duration::new(1, 0)) {
+                            Err(_) => should_wait = !walkdir_done_copy1.load(Ordering::SeqCst),
+                            Ok(recv) => {
+                                if let Err(e) = convert_sender.send(recv) {
+                                    eprintln!("Error occurred while forwarding walkdir result to proceed: {}", e);
+                                }
+                            },
+                        };
+                    }
+                });
+
+                s.spawn(move |_| {
+                    for entry in WalkDir::new(img_path).into_iter().filter_map(|e| e.ok()).filter(|e| e.path().is_file()) {
+                        let img_absolute_path = entry.path().to_path_buf();
+                        let img_uri_path = String::from(&entry.path().to_str().unwrap()[img_path_len..]);
+
+                        if let Err(e) = walkdir_sender.send((img_absolute_path, img_uri_path)) {
+                            eprintln!("Error occurred while sending walkdir result: {}", e);
+                        } else {
+                            filecount.store(filecount.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
+                        }
+                    }
+                    walkdir_done.store(true, Ordering::SeqCst);
+                });
+            }).unwrap();
+        });
+    }
+}
+
+fn generate_webp_paths(img_absolute_path: &PathBuf, img_uri_path: &str) -> (PathBuf, PathBuf, PathBuf) {
+    // aya.jpg
+    let img_name = img_absolute_path.file_name().unwrap().to_str().unwrap();
+    // /path/to
+    let mut dir_uri_path = PathBuf::from(&img_uri_path);
+    dir_uri_path.pop();
+    let dir_uri_path = dir_uri_path.to_str().unwrap();
+    // /IMG_PATH/path/to/
+    let mut dir_absolute_path = PathBuf::from(&img_absolute_path);
+    dir_absolute_path.pop();
+
+    // 1582735380
+    let modified_time = match std::fs::metadata(&img_absolute_path) {
+        Ok(metadata) => match metadata.modified() {
+            Ok(modified_time) => modified_time.duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_secs(),
+            Err(e) => {
+                eprintln!("{}", e);
+                0
+            }
+        },
+        Err(e) => {
+            eprintln!("{}", e);
+            0
+        }
+    };
+
+    // aya.jpg.1582735380.webp
+    let mut webp_img_name = String::from(img_name);
+    webp_img_name.push('.');
+    webp_img_name.push_str(&modified_time.to_string());
+    webp_img_name.push_str(".webp");
+
+    // /var/www/cache/path/to
+    let mut webp_dir_absolute_path = PathBuf::from(&CONFIG.webp_path);
+    webp_dir_absolute_path.push(&dir_uri_path[1..]);
+
+    // /var/www/cache/path/to/aya.jpg.1582735380.webp
+    let mut webp_img_absolute_path = PathBuf::from(&webp_dir_absolute_path);
+    webp_img_absolute_path.push(&webp_img_name);
+
+    (webp_img_absolute_path, webp_dir_absolute_path, dir_absolute_path)
+}
+
+fn remove_old_cached_webp(webp_img_absolute_path: &PathBuf, webp_dir_absolute_path: &PathBuf, img_absolute_path: &PathBuf) {
+    // remove old webp files
+    // /var/www/cache/path/to/aya.jpg.1582735300.webp <- older ones will be removed
+    // /var/www/cache/path/to/aya.jpg.1582735380.webp <- keep the latest one
+    let mut glob_pattern = String::from(webp_dir_absolute_path.canonicalize().unwrap().to_str().unwrap());
+    glob_pattern.push_str(&format!("{}.*.webp", img_absolute_path.file_name().unwrap().to_str().unwrap()));
+
+    let webp_img_absolute_path = webp_img_absolute_path.canonicalize().unwrap();
+    let webp_img_absolute_path = webp_img_absolute_path.to_str().unwrap();
+
+    for entry in glob(&glob_pattern).expect("Failed to read glob pattern") {
+        match entry {
+            Ok(path) => if path.to_str().unwrap() != webp_img_absolute_path {
+                let _ = std::fs::remove_file(&path);
+            },
+            Err(e) => eprintln!("{:?}", e),
+        }
     }
 }
 
@@ -166,98 +335,35 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
             return Ok(sendfile!(img_absolute_path.to_str().unwrap()))
         }
 
-        // aya.jpg
-        let img_name = img_absolute_path.file_name().unwrap().to_str().unwrap();
-        // /path/to
-        let mut dir_uri_path = PathBuf::from(&img_uri_path);
-        dir_uri_path.pop();
-        let dir_uri_path = dir_uri_path.to_str().unwrap();
-        // /IMG_PATH/path/to/
-        let mut dir_absolute_path = PathBuf::from(&img_absolute_path);
-        dir_absolute_path.pop();
-        let dir_absolute_path = dir_absolute_path.to_str().unwrap();
+        let webp_converted_paths = generate_webp_paths(&img_absolute_path, img_uri_path);
+        let webp_img_absolute_path = webp_converted_paths.0;
+        let webp_dir_absolute_path = webp_converted_paths.1;
+        let dir_absolute_path = webp_converted_paths.2.to_str().unwrap();
 
-        // /var/www
-        let cwd = match env::current_dir() {
-            Ok(cwd) => String::from(cwd.to_str().unwrap()),
-            Err(e) => {
-                eprintln!("{}", e);
-                return Ok(sendfile!(img_absolute_path.to_str().unwrap()));
-            }
-        };
-
-        // 1582735380
-        let modified_time = match std::fs::metadata(&img_absolute_path) {
-            Ok(metadata) => match metadata.modified() {
-                Ok(modified_time) => modified_time.duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_secs(),
-                Err(e) => {
-                    eprintln!("{}", e);
-                    0
-                }
-            },
-            Err(e) => {
-                eprintln!("{}", e);
-                0
-            }
-        };
-
-        // aya.jpg.1582735380.webp
-        let mut webp_img_name = String::from(img_name);
-        webp_img_name.push('.');
-        webp_img_name.push_str(&modified_time.to_string());
-        webp_img_name.push_str(".webp");
-
-        // /var/www/cache/path/to
-        let mut webp_dir_absolute_path = PathBuf::from(&cwd);
-        webp_dir_absolute_path.push("cache");
-        webp_dir_absolute_path.push(&dir_uri_path[1..]);
-
-        // /var/www/cache/path/to/aya.jpg.1582735380.webp
-        let mut webp_img_absolute_path = PathBuf::from(&webp_dir_absolute_path);
-        webp_img_absolute_path.push(&webp_img_name);
-
-        if webp_img_absolute_path.exists() {
-            return Ok(sendfile!(webp_img_absolute_path.to_str().unwrap()));
+        return if webp_img_absolute_path.exists() {
+            Ok(sendfile!(webp_img_absolute_path.to_str().unwrap()))
         } else {
             // send original file if we cannot create cache directory or subdirectory
-            match fs::create_dir_all(&webp_dir_absolute_path).await {
-                Ok(()) => (),
+            let directory_level_config = match fs::create_dir_all(&webp_dir_absolute_path).await {
+                Ok(()) => DirectoryLevelConfig::detect(dir_absolute_path),
                 Err(e) => {
                     eprintln!("{}", e);
                     return Ok(sendfile!(img_absolute_path.to_str().unwrap()));
                 }
             };
 
-            let directory_level_config = DirectoryLevelConfig::detect(dir_absolute_path);
-
             // try to convert image to webp format
-            return match convert(img_absolute_path.to_str().unwrap(), webp_img_absolute_path.to_str().unwrap(), directory_level_config.quality, directory_level_config.mode) {
+            match convert(img_absolute_path.to_str().unwrap(), webp_img_absolute_path.to_str().unwrap(), directory_level_config.quality, directory_level_config.mode) {
                 Err(e) => {
                     // send original file if failed
                     eprintln!("{}", e);
                     Ok(sendfile!(img_absolute_path.to_str().unwrap()))
                 },
                 _ => {
-                    // remove old webp files
-                    // /var/www/cache/path/to/aya.jpg.1582735300.webp <- older ones will be removed
-                    // /var/www/cache/path/to/aya.jpg.1582735380.webp <- keep the latest one
-                    let mut glob_pattern = String::from(webp_dir_absolute_path.to_str().unwrap());
-                    glob_pattern.push_str(&format!("{}.*.webp", img_name));
-
-                    let webp_img_absolute_path = webp_img_absolute_path.to_str().unwrap();
-                    for entry in glob(&glob_pattern).expect("Failed to read glob pattern") {
-                        match entry {
-                            Ok(path) => if path.to_str().unwrap() != webp_img_absolute_path {
-                                let _ = std::fs::remove_file(&path);
-                            },
-                            Err(e) => eprintln!("{:?}", e),
-                        }
-                    }
-                    
-                    // send webp file
+                    remove_old_cached_webp(&webp_img_absolute_path, &webp_dir_absolute_path, &img_absolute_path);
                     Ok(sendfile!(webp_img_absolute_path))
                 },
-            };
+            }
         }
     }
 }
@@ -303,21 +409,46 @@ fn convert(original_file_path: &str, webp_file_path: &str, quality: f32, mode: i
             let encoded_data : Vec<u8> = unsafe { Vec::from_raw_parts(encoded_data, encoded_size, encoded_size) };
             let mut file = std::fs::File::create(&webp_file_path)?;
             file.write_all(&encoded_data)?;
+            Ok(())
         },
-        Err(e) => {
-            eprintln!("{}", e);
-            return Err(std::io::Error::new( std::io::ErrorKind::InvalidData, format!("Cannot decode image: {}", original_file_path) ));
-        },
-    };
+        Err(e) => Err(std::io::Error::new( std::io::ErrorKind::InvalidData, format!("Cannot decode image: {}: {}", original_file_path, e) )),
+    }
+}
 
-    Ok(())
+fn print_usage(program: &str, opts: Options) {
+    let brief = format!("Usage: {} -c CONF [options]", program);
+    print!("{}", opts.usage(&brief));
 }
 
 fn from_cli_args() -> WebPServerConfig {
     let args: Vec<String> = std::env::args().collect();
-    let mut config_path = "./config.json";
-    if args.len() >= 2 {
-        config_path = &*args[1];
+    let program = args[0].clone();
+
+    let mut opts = Options::new();
+    opts.optopt("c", "config", "path config file", "CONF");
+    opts.optflag("p", "prefetch", "enable prefetch");
+    opts.optopt("j", "jobs", "max threads for prefetch, [1, num_cpus]", "JOBS");
+    opts.optflag("h", "help", "print usage");
+    let matches = match opts.parse(&args[1..]) {
+        Ok(m) => { m }
+        Err(f) => { panic!(f.to_string()) }
+    };
+
+    if matches.opt_present("h") {
+        print_usage(&program, opts);
+    }
+
+    if matches.opt_present("p") {
+        unsafe { PREFETCH.enabled = true; };
+        // cap jobs in [1, num_cpus]
+        if let Some(jobs) = matches.opt_str("j") {
+            unsafe { PREFETCH.jobs = min(max(1, jobs.parse::<usize>().unwrap_or(1)), num_cpus::get()); };
+        }
+    }
+
+    let mut config_path = String::from("./config.json");
+    if let Some(cli_config_path) = matches.opt_str("c") {
+        config_path = cli_config_path.clone();
     }
     match load_config(config_path) {
         Ok(value) => value,

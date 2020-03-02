@@ -73,6 +73,7 @@ Create a config.json as follows to face your need.
     "host": "127.0.0.1",
     "port": 3333,
     "img_path": "./images",
+    "webp_path": "./cache",
     "allowed_types": ["jpg","png","jpeg"],
     "quality": 90,
     "mode": 1
@@ -157,7 +158,33 @@ cache
 ```
 
 ### 3. Run
-Run the binary like this: `./webp-server-rs /path/to/config.json`
+#### 3.1 Without prefetch
+Run the binary like this: 
+
+```
+./webp-server-rs -c /path/to/config.json
+# or
+./webp-server-rs --config /path/to/config.json
+``` 
+
+#### 3.2 With prefetch
+To enable prefetch feature, using `-p`.
+
+```
+./webp-server-rs -c /path/to/config.json -p 
+# or
+./webp-server-rs --config /path/to/config.json --preftech
+``` 
+
+By default, this will use all logical CPUs available in the system. 
+
+To set max allowed number of threads that prefetch can use, using `-j`.
+
+```
+./webp-server-rs -c /path/to/config.json -p -j 4 
+# or
+./webp-server-rs --config /path/to/config.json --preftech --jobs 4 
+``` 
 
 #### screen or tmux
 
