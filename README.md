@@ -26,8 +26,11 @@ Well, in aforementioned blog post, I said that it would be better if it was writ
 #### Size
 
 - `webp_server` with `node_modules`: 43M
-- `webp-server(go)` single binary: 9.38M
-- `webp_server(rust)` single binary: 1.89M(macOS) / 2.38M(Linux)
+
+|                                                              | Darwin x86_64 | Linux amd64 |
+| ------------------------------------------------------------ | ------------- | ----------- |
+| [webp-server-go](https://github.com/webp-sh/webp_server_go)  | 15.4MB        | 13.5MB      |
+| [webp-server-rs](https://github.com/BlueCocoa/webp_server_rs) | 2.01MB        | 2.5MB       |
 
 #### Convenience
 
@@ -110,6 +113,7 @@ images
 
 And the config files,
 `config.json`, `mode = 2` => near lossless encoding, quality will be used to reduce the size of output image
+
 ```json
 {
     "host": "127.0.0.1",
@@ -136,7 +140,7 @@ And the config files,
 }
 ```
 
-`images/lossy/.webp-conf`, mode = 3 => lossy encoding, quality will be used to reduce the size of output image
+`images/lossy/.webp-conf`, `mode = 3` => lossy encoding, quality will be used to reduce the size of output image
 ```json
 {
     "mode": 3,
@@ -165,7 +169,7 @@ Run the binary like this:
 ./webp-server-rs -c /path/to/config.json
 # or
 ./webp-server-rs --config /path/to/config.json
-``` 
+```
 
 #### 3.2 With prefetch
 To enable prefetch feature, using `-p`. 
@@ -176,7 +180,7 @@ To enable prefetch feature, using `-p`.
 ./webp-server-rs -c /path/to/config.json -p 
 # or
 ./webp-server-rs --config /path/to/config.json --preftech
-``` 
+```
 
 By default, this will use all logical CPUs available in the system. 
 
@@ -186,7 +190,7 @@ To set max allowed number of threads that prefetch can use, using `-j`.
 ./webp-server-rs -c /path/to/config.json -p -j 4 
 # or
 ./webp-server-rs --config /path/to/config.json --preftech --jobs 4 
-``` 
+```
 
 #### screen or tmux
 
