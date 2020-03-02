@@ -5,12 +5,10 @@ After=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/var/cache/webps
-ExecStart=/usr/local/bin/webp-server-rs /etc/webp-server-rs/config.json
+ExecStart=/usr/local/bin/webp-server-rs --config /etc/webp-server-rs/config.json
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=3s
 
 [Install]
 WantedBy=multi-user.target
-
