@@ -44,15 +44,17 @@ Not really tested. But IMHO it should be as fast as golang version.
 
 ### Supported Image Formats
 
-| Format | Converting | Default On |
-| ------ | ---------- | ---------- |
-| PNG    | All supported color types | Yes |
-| JPEG   | Baseline and progressive | Yes |
-| BMP    | Yes | No |
-| ICO    | Yes | No |
-| TIFF   | Baseline(no fax support) + LZW + PackBits | No |
-| PNM    | PBM, PGM, PPM, standard PAM | No |
-| DDS    | DXT1, DXT3, DXT5 | No |
+| Format | Converting |
+| ------ | ---------- |
+| PNG    | All supported color types |
+| JPEG   | Baseline and progressive |
+| BMP    | Yes |
+| ICO    | Yes |
+| TIFF   | Baseline(no fax support) + LZW + PackBits |
+| PNM    | PBM, PGM, PPM, standard PAM |
+| DDS    | DXT1, DXT3, DXT5 |
+
+Please set proxy rules in Nginx / Apache configuration file to match specific types of files. [example](https://github.com/webp-sh/webp_server_rs#wordpress-example)
 
 ## Usage
 Shamefully copy and paste most of the usage guidelines from [webp-sh/webp_server_go](https://github.com/webp-sh/webp_server_go), given that they are basically identical.
@@ -179,7 +181,7 @@ To enable prefetch feature, using `-p`.
 ```
 ./webp-server-rs -c /path/to/config.json -p 
 # or
-./webp-server-rs --config /path/to/config.json --preftech
+./webp-server-rs --config /path/to/config.json prefetch
 ```
 
 By default, this will use all logical CPUs available in the system. 
@@ -189,7 +191,7 @@ To set max allowed number of threads that prefetch can use, using `-j`.
 ```
 ./webp-server-rs -c /path/to/config.json -p -j 4 
 # or
-./webp-server-rs --config /path/to/config.json --preftech --jobs 4 
+./webp-server-rs --config /path/to/config.json prefetch --jobs 4 
 ```
 
 #### screen or tmux
@@ -198,7 +200,7 @@ Use screen or tmux to avoid being terminated. Let's take screen for example
 
 ```bash
 screen -S webp
-./webp-server-rs /path/to/config.json
+./webp-server-rs --config /path/to/config.json
 ```
 
 #### systemd
