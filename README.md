@@ -168,7 +168,9 @@ Run the binary like this:
 ``` 
 
 #### 3.2 With prefetch
-To enable prefetch feature, using `-p`.
+To enable prefetch feature, using `-p`. 
+
+**Prefetch will be ran in background, WebP image service will operate normally.**
 
 ```
 ./webp-server-rs -c /path/to/config.json -p 
