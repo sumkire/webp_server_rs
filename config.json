@@ -3,6 +3,6 @@
 	"port": 3333,
 	"img_path": "./images",
 	"webp_path": "./cache",
-	"quality": 70,
+	"quality": 80,
 	"mode": 2
 }

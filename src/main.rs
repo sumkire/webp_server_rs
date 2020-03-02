@@ -5,7 +5,7 @@ extern crate libc;
 extern crate getopts;
 extern crate serde;
 
-use crossbeam_channel::{unbounded, bounded};
+use crossbeam_channel::tick;
 use crossbeam_utils::thread;
 use getopts::Options;
 use glob::glob;
@@ -15,6 +15,7 @@ use image;
 use libc::{size_t, c_int, c_uchar};
 use num_cpus;
 use serde::Deserialize;
+use std::cmp::{max, min};
 use std::ffi::c_void;
 use std::io;
 use std::io::prelude::*;
@@ -24,11 +25,9 @@ use std::os::raw::c_float;
 use std::path::{Path, PathBuf};
 use std::ptr::null_mut;
 use std::string::String;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
+use threadpool::ThreadPool;
 use tokio::fs;
-use std::cmp::{max, min};
 use walkdir::WalkDir;
 
 macro_rules! generate_http_response_builder {
@@ -162,42 +161,24 @@ fn prefetch_if_requested() {
         std::thread::spawn(move || {
             println!("[INFO] Prefetch Started");
             let now = SystemTime::now();
-            let (walkdir_sender, walkdir_receiver) = unbounded::<(PathBuf, String)>();
-            let (convert_sender, convert_receiver) = bounded::<(PathBuf, String)>(prefetch.jobs);
             thread::scope(|s| {
-                let filecount: Arc::<AtomicU64> = Arc::new(AtomicU64::new(0));
-                let filecount_copy = Arc::clone(&filecount);
-
-                let walkdir_done: Arc::<AtomicBool> = Arc::new(AtomicBool::new(false));
-                let walkdir_done_copy1 = Arc::clone(&walkdir_done);
-                let walkdir_done_copy2 = Arc::clone(&walkdir_done);
-
                 s.spawn(move |_| {
-                    let mut should_wait = true;
-                    let mut current_num = 0usize;
-                    while should_wait {
-                        match convert_receiver.recv_timeout(std::time::Duration::new(1, 0)) {
-                            Err(_) => should_wait = !walkdir_done_copy2.load(Ordering::SeqCst),
-                            Ok(recv) => {
-                                current_num += 1;
-                                print!("\r[INFO] Prefetch Progress: [{}/{}]", current_num, filecount_copy.load(Ordering::SeqCst));
-                                let _ = std::io::stdout().flush();
+                    let mut filecount = 0usize;
+                    let pool = ThreadPool::new(prefetch.jobs);
+                    for entry in WalkDir::new(img_path).into_iter().filter_map(|e| e.ok()).filter(|e| e.path().is_file()) {
+                        let img_absolute_path = entry.path().to_path_buf();
+                        let img_uri_path = String::from(&entry.path().to_str().unwrap()[img_path_len..]);
+                        filecount += 1;
+                        pool.execute(move|| {
+                            let webp_converted_paths = generate_webp_paths(&img_absolute_path, &img_uri_path);
+                            let webp_img_absolute_path = webp_converted_paths.0;
 
-                                let img_absolute_path = recv.0;
-                                let img_uri_path = recv.1;
-
-                                let webp_converted_paths = generate_webp_paths(&img_absolute_path, &img_uri_path);
-                                let webp_img_absolute_path = webp_converted_paths.0;
-
-                                if webp_img_absolute_path.exists() {
-                                    continue;
-                                }
-
+                            if !webp_img_absolute_path.exists() {
                                 let webp_dir_absolute_path = webp_converted_paths.1;
                                 let dir_absolute_path = webp_converted_paths.2.to_str().unwrap();
 
                                 let directory_level_config = match std::fs::create_dir_all(&webp_dir_absolute_path) {
-                                    Err(_) => continue,
+                                    Err(_) => return,
                                     _ => DirectoryLevelConfig::detect(dir_absolute_path),
                                 };
 
@@ -207,37 +188,20 @@ fn prefetch_if_requested() {
                                     _ => remove_old_cached_webp(&webp_img_absolute_path, &webp_dir_absolute_path, &img_absolute_path),
                                 };
                             }
-                        }
+                        });
                     }
-                    println!("\n[INFO] Prefetch Done, elapsed time: {:.4} seconds", now.elapsed().unwrap().as_secs_f32());
-                });
 
-                s.spawn(move |_| {
-                    let mut should_wait = true;
-                    while should_wait {
-                        match walkdir_receiver.recv_timeout(std::time::Duration::new(1, 0)) {
-                            Err(_) => should_wait = !walkdir_done_copy1.load(Ordering::SeqCst),
-                            Ok(recv) => {
-                                if let Err(e) = convert_sender.send(recv) {
-                                    eprintln!("Error occurred while forwarding walkdir result to proceed: {}", e);
-                                }
-                            },
-                        };
-                    }
-                });
-
-                s.spawn(move |_| {
-                    for entry in WalkDir::new(img_path).into_iter().filter_map(|e| e.ok()).filter(|e| e.path().is_file()) {
-                        let img_absolute_path = entry.path().to_path_buf();
-                        let img_uri_path = String::from(&entry.path().to_str().unwrap()[img_path_len..]);
-
-                        if let Err(e) = walkdir_sender.send((img_absolute_path, img_uri_path)) {
-                            eprintln!("Error occurred while sending walkdir result: {}", e);
+                    loop {
+                        let ticker = tick(Duration::from_micros(500));
+                        ticker.recv().unwrap();
+                        if pool.queued_count() == 0 && pool.active_count() == 0 {
+                            println!("\n[INFO] Prefetch Done, elapsed time: {:.4} seconds", now.elapsed().unwrap().as_secs_f32());
+                            return;
                         } else {
-                            filecount.store(filecount.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
+                            print!("\r[INFO] Prefetch Progress: [{}/{}]", filecount - pool.queued_count(), filecount);
+                            let _ = std::io::stdout().flush();
                         }
                     }
-                    walkdir_done.store(true, Ordering::SeqCst);
                 });
             }).unwrap();
         });
@@ -258,7 +222,7 @@ fn generate_webp_paths(img_absolute_path: &PathBuf, img_uri_path: &str) -> (Path
     // 1582735380
     let modified_time = match std::fs::metadata(&img_absolute_path) {
         Ok(metadata) => match metadata.modified() {
-            Ok(modified_time) => modified_time.duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_secs(),
+            Ok(modified_time) => modified_time.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
             Err(e) => {
                 eprintln!("{}", e);
                 0
@@ -439,7 +403,7 @@ fn from_cli_args() -> WebPServerConfig {
     }
 
     if matches.opt_present("p") {
-        unsafe { PREFETCH.enabled = true; };
+        unsafe { PREFETCH.enabled = true; PREFETCH.jobs = num_cpus::get(); };
         // cap jobs in [1, num_cpus]
         if let Some(jobs) = matches.opt_str("j") {
             unsafe { PREFETCH.jobs = min(max(1, jobs.parse::<usize>().unwrap_or(1)), num_cpus::get()); };
