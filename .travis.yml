@@ -3,6 +3,7 @@ script:
   - make
   - cargo build --verbose --all
   - cargo test
+  - echo "All done, have fun!"
 
 cache:
   cargo: true
