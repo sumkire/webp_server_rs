@@ -1,12 +1,10 @@
 #[macro_use]
 extern crate lazy_static;
-extern crate crossbeam_utils;
 extern crate libc;
 extern crate getopts;
 extern crate serde;
 
 use crossbeam_channel::tick;
-use crossbeam_utils::thread;
 use getopts::Options;
 use glob::glob;
 use hyper::service::{make_service_fn, service_fn};
@@ -124,6 +122,7 @@ lazy_static! {
 
 static mut PREFETCH: PrefetchConfig = PrefetchConfig { enabled: false, jobs: 1 };
 
+#[derive(Debug)]
 struct ImageMetadata {
     width: i32,
     height: i32,
@@ -161,49 +160,45 @@ fn prefetch_if_requested() {
         std::thread::spawn(move || {
             println!("[INFO] Prefetch Started");
             let now = SystemTime::now();
-            thread::scope(|s| {
-                s.spawn(move |_| {
-                    let mut filecount = 0usize;
-                    let pool = ThreadPool::new(prefetch.jobs);
-                    for entry in WalkDir::new(img_path).into_iter().filter_map(|e| e.ok()).filter(|e| e.path().is_file()) {
-                        let img_absolute_path = entry.path().to_path_buf();
-                        let img_uri_path = String::from(&entry.path().to_str().unwrap()[img_path_len..]);
-                        filecount += 1;
-                        pool.execute(move|| {
-                            let webp_converted_paths = generate_webp_paths(&img_absolute_path, &img_uri_path);
-                            let webp_img_absolute_path = webp_converted_paths.0;
+            let mut filecount = 0usize;
+            let pool = ThreadPool::new(prefetch.jobs);
+            for entry in WalkDir::new(img_path).into_iter().filter_map(|e| e.ok()).filter(|e| e.path().is_file()) {
+                let img_absolute_path = entry.path().to_path_buf();
+                let img_uri_path = String::from(&entry.path().to_str().unwrap()[img_path_len..]);
+                filecount += 1;
+                pool.execute(move|| {
+                    let webp_converted_paths = generate_webp_paths(&img_absolute_path, &img_uri_path);
+                    let webp_img_absolute_path = webp_converted_paths.0;
 
-                            if !webp_img_absolute_path.exists() {
-                                let webp_dir_absolute_path = webp_converted_paths.1;
-                                let dir_absolute_path = webp_converted_paths.2.to_str().unwrap();
+                    if !webp_img_absolute_path.exists() {
+                        let webp_dir_absolute_path = webp_converted_paths.1;
+                        let dir_absolute_path = webp_converted_paths.2.to_str().unwrap();
 
-                                let directory_level_config = match std::fs::create_dir_all(&webp_dir_absolute_path) {
-                                    Err(_) => return,
-                                    _ => DirectoryLevelConfig::detect(dir_absolute_path),
-                                };
+                        let directory_level_config = match std::fs::create_dir_all(&webp_dir_absolute_path) {
+                            Err(_) => return,
+                            _ => DirectoryLevelConfig::detect(dir_absolute_path),
+                        };
 
-                                // try to convert image to webp format
-                                match convert(img_absolute_path.to_str().unwrap(), webp_img_absolute_path.to_str().unwrap(), directory_level_config.quality, directory_level_config.mode) {
-                                    Err(_) => (),
-                                    _ => remove_old_cached_webp(&webp_img_absolute_path, &webp_dir_absolute_path, &img_absolute_path),
-                                };
-                            }
-                        });
-                    }
-
-                    loop {
-                        let ticker = tick(Duration::from_micros(500));
-                        ticker.recv().unwrap();
-                        if pool.queued_count() == 0 && pool.active_count() == 0 {
-                            println!("\n[INFO] Prefetch Done, elapsed time: {:.4} seconds", now.elapsed().unwrap().as_secs_f32());
-                            return;
-                        } else {
-                            print!("\r[INFO] Prefetch Progress: [{}/{}]", filecount - pool.queued_count(), filecount);
-                            let _ = std::io::stdout().flush();
-                        }
+                        // try to convert image to webp format
+                        match convert(img_absolute_path.to_str().unwrap(), webp_img_absolute_path.to_str().unwrap(), directory_level_config.quality, directory_level_config.mode) {
+                            Err(_) => (),
+                            _ => remove_old_cached_webp(&webp_img_absolute_path, &webp_dir_absolute_path, &img_absolute_path),
+                        };
                     }
                 });
-            }).unwrap();
+            }
+
+            loop {
+                let ticker = tick(Duration::from_micros(500));
+                ticker.recv().unwrap();
+                if pool.queued_count() == 0 && pool.active_count() == 0 {
+                    println!("\n[INFO] Prefetch Done, elapsed time: {:.4} seconds", now.elapsed().unwrap().as_secs_f32());
+                    return;
+                } else {
+                    print!("\r[INFO] Prefetch Progress: [{}/{}]", filecount - pool.queued_count(), filecount);
+                    let _ = std::io::stdout().flush();
+                }
+            }
         });
     }
 }
@@ -256,17 +251,20 @@ fn remove_old_cached_webp(webp_img_absolute_path: &PathBuf, webp_dir_absolute_pa
     // /var/www/cache/path/to/aya.jpg.1582735300.webp <- older ones will be removed
     // /var/www/cache/path/to/aya.jpg.1582735380.webp <- keep the latest one
     let mut glob_pattern = String::from(webp_dir_absolute_path.canonicalize().unwrap().to_str().unwrap());
-    glob_pattern.push_str(&format!("{}.*.webp", img_absolute_path.file_name().unwrap().to_str().unwrap()));
+    glob_pattern.push_str(&format!("/{}.*.webp", img_absolute_path.file_name().unwrap().to_str().unwrap()));
 
-    let webp_img_absolute_path = webp_img_absolute_path.canonicalize().unwrap();
-    let webp_img_absolute_path = webp_img_absolute_path.to_str().unwrap();
-
-    for entry in glob(&glob_pattern).expect("Failed to read glob pattern") {
-        match entry {
-            Ok(path) => if path.to_str().unwrap() != webp_img_absolute_path {
-                let _ = std::fs::remove_file(&path);
-            },
-            Err(e) => eprintln!("{:?}", e),
+    if let Ok(webp_img_absolute_path) = webp_img_absolute_path.canonicalize() {
+        if let Some(webp_img_absolute_path) = webp_img_absolute_path.to_str() {
+            for entry in glob(&glob_pattern).expect("Failed to read glob pattern") {
+                match entry {
+                    Ok(path) => if let Some(path) = path.to_str() {
+                        if path != webp_img_absolute_path {
+                            let _ = std::fs::remove_file(&path);
+                        }
+                    },
+                    Err(e) => eprintln!("{:?}", e),
+                }
+            }
         }
     }
 }
@@ -333,39 +331,58 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
 }
 
 fn convert(original_file_path: &str, webp_file_path: &str, quality: f32, mode: i32) -> Result<(), io::Error> {
+//    println!("[1]: {}", original_file_path);
     let mut file = std::fs::File::open(original_file_path)?;
     let mut buffer: Vec<u8> = Vec::new();
     file.read_to_end(&mut buffer)?;
 
     match image::load_from_memory(&buffer) {
         Ok(image) => {
-            let metadata;
+            let metadata ;
             let encoded_size: size_t;
             let encoded_data: *mut c_uchar = null_mut();
 
             match image {
                 image::DynamicImage::ImageBgr8(image) => {
                     metadata = get_image_metadata!(image, 3);
+//                    println!("[3.1: {}", WebPPictureImportBGR as usize);
+//                    let mut file = std::fs::File::create("./test.bin")?;
+//                    file.write_all(&image.into_raw())?;
                     encoded_size = encode_to_webp_image!(WebPPictureImportBGR, metadata, quality, mode, &encoded_data);
                 },
                 image::DynamicImage::ImageRgb8(image) => {
                     metadata = get_image_metadata!(image, 3);
+//                    println!("[3.2: {}", WebPPictureImportRGB as usize);
+//                    let mut file = std::fs::File::create("./test.bin")?;
+//                    file.write_all(&image.into_raw())?;
                     encoded_size = encode_to_webp_image!(WebPPictureImportRGB, metadata, quality, mode, &encoded_data);
                 }
                 image::DynamicImage::ImageBgra8(image) => {
                     metadata = get_image_metadata!(image, 4);
+//                    println!("[3.3: {}", WebPPictureImportBGRA as usize);
+//                    let mut file = std::fs::File::create("./test.bin")?;
+//                    file.write_all(&image.into_raw())?;
                     encoded_size = encode_to_webp_image!(WebPPictureImportBGRA, metadata, quality, mode, &encoded_data);
                 },
                 image::DynamicImage::ImageRgba8(image) => {
                     metadata = get_image_metadata!(image, 4);
+//                    println!("[3.4]: {}", WebPPictureImportRGBA as usize);
+//                    let mut file = std::fs::File::create("./test.bin")?;
+//                    file.write_all(&image.into_raw())?;
                     encoded_size = encode_to_webp_image!(WebPPictureImportRGBA, metadata, quality, mode, &encoded_data);
                 }
                 image::DynamicImage::ImageRgb16(_) | image::DynamicImage::ImageLuma8(_) | image::DynamicImage::ImageLuma16(_) => {
                     metadata = get_image_metadata!(image.to_rgb(), 3);
+//                    println!("[3.5: {}", WebPPictureImportRGB as usize);
+//                    let mut file = std::fs::File::create("./test.bin")?;
+//                    file.write_all(&image.to_rgb().into_raw())?;
                     encoded_size = encode_to_webp_image!(WebPPictureImportRGB, metadata, quality, mode, &encoded_data);
                 },
                 image::DynamicImage::ImageRgba16(_) | image::DynamicImage::ImageLumaA8(_) | image::DynamicImage::ImageLumaA16(_) => {
                     metadata = get_image_metadata!(image.to_rgba(), 4);
+//                    println!("[3.6: {}", WebPPictureImportRGBA as usize);
+//                    let mut file = std::fs::File::create("./test.bin")?;
+//                    file.write_all(&image.to_rgba().into_raw())?;
                     encoded_size = encode_to_webp_image!(WebPPictureImportRGBA, metadata, quality, mode, &encoded_data);
                 }
             };
