@@ -1,5 +1,3 @@
-#[macro_use]
-extern crate lazy_static;
 extern crate libc;
 extern crate getopts;
 extern crate serde;
@@ -27,6 +25,7 @@ use std::time::{Duration, SystemTime};
 use threadpool::ThreadPool;
 use tokio::fs;
 use walkdir::WalkDir;
+use std::net::SocketAddr;
 
 macro_rules! generate_http_response_builder {
     ($status_code:expr, $body:expr) => {{
@@ -94,8 +93,8 @@ struct DirectoryLevelConfig {
 }
 
 impl DirectoryLevelConfig {
-    fn detect(directory_path: &str) -> DirectoryLevelConfig {
-        let config = DirectoryLevelConfig { quality: CONFIG.quality,  mode: CONFIG.mode };
+    fn detect(directory_path: &str, global_quality: f32, global_mode: i32) -> DirectoryLevelConfig {
+        let config = DirectoryLevelConfig { quality: global_quality,  mode: global_mode };
         let mut directory_level_config_path = PathBuf::from(directory_path);
         directory_level_config_path.push(".webp-conf");
         match std::fs::File::open(directory_level_config_path.as_path()) {
@@ -114,10 +113,6 @@ impl DirectoryLevelConfig {
 struct PrefetchConfig {
     enabled: bool,
     jobs: usize,
-}
-
-lazy_static! {
-    static ref CONFIG: WebPServerConfig = from_cli_args();
 }
 
 static mut PREFETCH: PrefetchConfig = PrefetchConfig { enabled: false, jobs: 1 };
@@ -141,22 +136,24 @@ macro_rules! get_image_metadata {
 }
 
 #[tokio::main]
-async fn main() {
-    let (host, port) = get_server_listen_options();
-    let addr = format!("{}:{}", host, port).parse().unwrap();
+async fn main() -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let addr = get_server_listen_options();
     let server = Server::bind(&addr).serve(make_service_fn(|_| async { Ok::<_, hyper::Error>(service_fn(webp_services)) }));
-    prefetch_if_requested();
+    prefetch_if_requested(from_cli_args());
     println!("WebP image service on http://{}", addr);
-    if let Err(e) = server.await {
-        eprintln!("server error: {}", e);
-    }
+    server.await?;
+    Ok(())
 }
 
-fn prefetch_if_requested() {
+fn prefetch_if_requested(config: WebPServerConfig) {
     let prefetch = unsafe { PREFETCH.clone() };
-    let img_path: String = CONFIG.img_path.clone();
-    let img_path_len = img_path.len();
+
     if prefetch.enabled {
+        let global_quality = config.quality;
+        let global_mode = config.mode;
+        let img_path = String::from(&config.img_path);
+        let img_path_len = img_path.len();
+        let webp_path = String::from(&config.webp_path);
         std::thread::spawn(move || {
             println!("[INFO] Prefetch Started");
             let now = SystemTime::now();
@@ -165,9 +162,10 @@ fn prefetch_if_requested() {
             for entry in WalkDir::new(img_path).into_iter().filter_map(|e| e.ok()).filter(|e| e.path().is_file()) {
                 let img_absolute_path = entry.path().to_path_buf();
                 let img_uri_path = String::from(&entry.path().to_str().unwrap()[img_path_len..]);
+                let webp_path_copy = webp_path.clone();
                 filecount += 1;
                 pool.execute(move|| {
-                    let webp_converted_paths = generate_webp_paths(&img_absolute_path, &img_uri_path);
+                    let webp_converted_paths = generate_webp_paths(&img_absolute_path, &img_uri_path, &webp_path_copy);
                     let webp_img_absolute_path = webp_converted_paths.0;
 
                     if !webp_img_absolute_path.exists() {
@@ -176,7 +174,7 @@ fn prefetch_if_requested() {
 
                         let directory_level_config = match std::fs::create_dir_all(&webp_dir_absolute_path) {
                             Err(_) => return,
-                            _ => DirectoryLevelConfig::detect(dir_absolute_path),
+                            _ => DirectoryLevelConfig::detect(dir_absolute_path, global_quality, global_mode),
                         };
 
                         // try to convert image to webp format
@@ -203,7 +201,7 @@ fn prefetch_if_requested() {
     }
 }
 
-fn generate_webp_paths(img_absolute_path: &PathBuf, img_uri_path: &str) -> (PathBuf, PathBuf, PathBuf) {
+fn generate_webp_paths(img_absolute_path: &PathBuf, img_uri_path: &str, webp_cache_path: &str) -> (PathBuf, PathBuf, PathBuf) {
     // aya.jpg
     let img_name = img_absolute_path.file_name().unwrap().to_str().unwrap();
     // /path/to
@@ -236,7 +234,7 @@ fn generate_webp_paths(img_absolute_path: &PathBuf, img_uri_path: &str) -> (Path
     webp_img_name.push_str(".webp");
 
     // /var/www/cache/path/to
-    let mut webp_dir_absolute_path = PathBuf::from(&CONFIG.webp_path);
+    let mut webp_dir_absolute_path = PathBuf::from(webp_cache_path);
     webp_dir_absolute_path.push(&dir_uri_path[1..]);
 
     // /var/www/cache/path/to/aya.jpg.1582735380.webp
@@ -273,10 +271,12 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
     if req.method() != hyper::Method::GET {
         Ok(method_not_allowed())
     } else {
+        let config = from_cli_args();
         // /path/to/aya.jpg
         let img_uri_path = req.uri().path();
         // /IMG_PATH/path/to/aya.jpg
-        let mut img_absolute_path = PathBuf::from(&CONFIG.img_path);
+        let config_img_path = config.img_path.to_string();
+        let mut img_absolute_path = PathBuf::from(&config_img_path);
         img_absolute_path.push(&img_uri_path[1..]);
 
         // Check the original image for existence and ensure its a file
@@ -297,7 +297,7 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
             return Ok(sendfile!(img_absolute_path.to_str().unwrap()))
         }
 
-        let webp_converted_paths = generate_webp_paths(&img_absolute_path, img_uri_path);
+        let webp_converted_paths = generate_webp_paths(&img_absolute_path, img_uri_path, &config.webp_path);
         let webp_img_absolute_path = webp_converted_paths.0;
         let webp_dir_absolute_path = webp_converted_paths.1;
         let dir_absolute_path = webp_converted_paths.2.to_str().unwrap();
@@ -307,7 +307,7 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
         } else {
             // send original file if we cannot create cache directory or subdirectory
             let directory_level_config = match fs::create_dir_all(&webp_dir_absolute_path).await {
-                Ok(()) => DirectoryLevelConfig::detect(dir_absolute_path),
+                Ok(()) => DirectoryLevelConfig::detect(dir_absolute_path, config.quality, config.mode),
                 Err(e) => {
                     eprintln!("{}", e);
                     return Ok(sendfile!(img_absolute_path.to_str().unwrap()));
@@ -331,7 +331,6 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
 }
 
 fn convert(original_file_path: &str, webp_file_path: &str, quality: f32, mode: i32) -> Result<(), io::Error> {
-//    println!("[1]: {}", original_file_path);
     let mut file = std::fs::File::open(original_file_path)?;
     let mut buffer: Vec<u8> = Vec::new();
     file.read_to_end(&mut buffer)?;
@@ -345,44 +344,26 @@ fn convert(original_file_path: &str, webp_file_path: &str, quality: f32, mode: i
             match image {
                 image::DynamicImage::ImageBgr8(image) => {
                     metadata = get_image_metadata!(image, 3);
-//                    println!("[3.1: {}", WebPPictureImportBGR as usize);
-//                    let mut file = std::fs::File::create("./test.bin")?;
-//                    file.write_all(&image.into_raw())?;
                     encoded_size = encode_to_webp_image!(WebPPictureImportBGR, metadata, quality, mode, &encoded_data);
                 },
                 image::DynamicImage::ImageRgb8(image) => {
                     metadata = get_image_metadata!(image, 3);
-//                    println!("[3.2: {}", WebPPictureImportRGB as usize);
-//                    let mut file = std::fs::File::create("./test.bin")?;
-//                    file.write_all(&image.into_raw())?;
                     encoded_size = encode_to_webp_image!(WebPPictureImportRGB, metadata, quality, mode, &encoded_data);
                 }
                 image::DynamicImage::ImageBgra8(image) => {
                     metadata = get_image_metadata!(image, 4);
-//                    println!("[3.3: {}", WebPPictureImportBGRA as usize);
-//                    let mut file = std::fs::File::create("./test.bin")?;
-//                    file.write_all(&image.into_raw())?;
                     encoded_size = encode_to_webp_image!(WebPPictureImportBGRA, metadata, quality, mode, &encoded_data);
                 },
                 image::DynamicImage::ImageRgba8(image) => {
                     metadata = get_image_metadata!(image, 4);
-//                    println!("[3.4]: {}", WebPPictureImportRGBA as usize);
-//                    let mut file = std::fs::File::create("./test.bin")?;
-//                    file.write_all(&image.into_raw())?;
                     encoded_size = encode_to_webp_image!(WebPPictureImportRGBA, metadata, quality, mode, &encoded_data);
                 }
                 image::DynamicImage::ImageRgb16(_) | image::DynamicImage::ImageLuma8(_) | image::DynamicImage::ImageLuma16(_) => {
                     metadata = get_image_metadata!(image.to_rgb(), 3);
-//                    println!("[3.5: {}", WebPPictureImportRGB as usize);
-//                    let mut file = std::fs::File::create("./test.bin")?;
-//                    file.write_all(&image.to_rgb().into_raw())?;
                     encoded_size = encode_to_webp_image!(WebPPictureImportRGB, metadata, quality, mode, &encoded_data);
                 },
                 image::DynamicImage::ImageRgba16(_) | image::DynamicImage::ImageLumaA8(_) | image::DynamicImage::ImageLumaA16(_) => {
                     metadata = get_image_metadata!(image.to_rgba(), 4);
-//                    println!("[3.6: {}", WebPPictureImportRGBA as usize);
-//                    let mut file = std::fs::File::create("./test.bin")?;
-//                    file.write_all(&image.to_rgba().into_raw())?;
                     encoded_size = encode_to_webp_image!(WebPPictureImportRGBA, metadata, quality, mode, &encoded_data);
                 }
             };
@@ -402,38 +383,53 @@ fn print_usage(program: &str, opts: Options) {
 }
 
 fn from_cli_args() -> WebPServerConfig {
-    let args: Vec<String> = std::env::args().collect();
-    let program = args[0].clone();
-
-    let mut opts = Options::new();
-    opts.optopt("c", "config", "path config file", "CONF");
-    opts.optflag("p", "prefetch", "enable prefetch");
-    opts.optopt("j", "jobs", "max threads for prefetch, [1, num_cpus]", "JOBS");
-    opts.optflag("h", "help", "print usage");
-    let matches = match opts.parse(&args[1..]) {
-        Ok(m) => { m }
-        Err(f) => { panic!(f.to_string()) }
+    static mut ONCE_TOKEN: bool = false;
+    static mut CONFIG: WebPServerConfig = WebPServerConfig {
+        host: None,
+        port: None,
+        img_path: String::new(),
+        webp_path: String::new(),
+        quality: 0.0,
+        mode: 0
     };
+    if unsafe { ONCE_TOKEN } {
+        unsafe { CONFIG.clone() }
+    } else {
+        let args: Vec<String> = std::env::args().collect();
+        let program = args[0].clone();
 
-    if matches.opt_present("h") {
-        print_usage(&program, opts);
-    }
+        let mut opts = Options::new();
+        opts.optopt("c", "config", "path config file", "CONF");
+        opts.optflag("p", "prefetch", "enable prefetch");
+        opts.optopt("j", "jobs", "max threads for prefetch, [1, num_cpus]", "JOBS");
+        opts.optflag("h", "help", "print usage");
+        let matches = match opts.parse(&args[1..]) {
+            Ok(m) => { m }
+            Err(f) => { panic!(f.to_string()) }
+        };
 
-    if matches.opt_present("p") {
-        unsafe { PREFETCH.enabled = true; PREFETCH.jobs = num_cpus::get(); };
-        // cap jobs in [1, num_cpus]
-        if let Some(jobs) = matches.opt_str("j") {
-            unsafe { PREFETCH.jobs = min(max(1, jobs.parse::<usize>().unwrap_or(1)), num_cpus::get()); };
+        if matches.opt_present("h") {
+            print_usage(&program, opts);
         }
-    }
 
-    let mut config_path = String::from("./config.json");
-    if let Some(cli_config_path) = matches.opt_str("c") {
-        config_path = cli_config_path.clone();
-    }
-    match load_config(config_path) {
-        Ok(value) => value,
-        Err(e) => panic!("[ERROR] Cannot read config file {}", e),
+        if matches.opt_present("p") {
+            unsafe { PREFETCH.enabled = true; PREFETCH.jobs = num_cpus::get(); };
+            // cap jobs in [1, num_cpus]
+            if let Some(jobs) = matches.opt_str("j") {
+                unsafe { PREFETCH.jobs = min(max(1, jobs.parse::<usize>().unwrap_or(1)), num_cpus::get()); };
+            }
+        }
+
+        let mut config_path = String::from("./config.json");
+        if let Some(cli_config_path) = matches.opt_str("c") {
+            config_path = cli_config_path.clone();
+        }
+        match load_config(config_path) {
+            Ok(value) => {
+                unsafe { CONFIG = value; CONFIG.clone() }
+            },
+            Err(e) => panic!("[ERROR] Cannot read config file {}", e),
+        }
     }
 }
 
@@ -444,14 +440,15 @@ fn load_config<P: AsRef<Path>>(conf_path: P) -> Result<WebPServerConfig, Box<dyn
     Ok(u)
 }
 
-fn get_server_listen_options() -> (String, u16) {
+fn get_server_listen_options() -> SocketAddr {
+    let config = from_cli_args();
     let mut host = String::from("127.0.0.1");
-    if let Some(custom_host) = &CONFIG.host {
+    if let Some(custom_host) = &config.host {
         host = String::from(custom_host);
     }
-    let port: u16 = match &CONFIG.port {
-        Some(port) => *port,
+    let port: u16 = match config.port {
+        Some(port) => port,
         _ => 3333,
     };
-    (host, port)
+    format!("{}:{}", host, port).parse().unwrap()
 }
