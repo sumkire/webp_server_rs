@@ -331,11 +331,7 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
 }
 
 fn convert(original_file_path: &str, webp_file_path: &str, quality: f32, mode: i32) -> Result<(), io::Error> {
-    let mut file = std::fs::File::open(original_file_path)?;
-    let mut buffer: Vec<u8> = Vec::new();
-    file.read_to_end(&mut buffer)?;
-
-    match image::load_from_memory(&buffer) {
+    match image::open(original_file_path) {
         Ok(image) => {
             let metadata ;
             let encoded_size: size_t;
