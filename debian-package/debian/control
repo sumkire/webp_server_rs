@@ -1,5 +1,5 @@
 Package: webp-server-rs
-Version: 0.1.0
+Version: 0.4.0
 Architecture: amd64
 Maintainer: Cocoa <0xbbc@0xbbc.com>
 Priority: optional
