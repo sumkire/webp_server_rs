@@ -139,13 +139,14 @@ macro_rules! get_image_metadata {
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let addr = get_server_listen_options();
     let server = Server::bind(&addr).serve(make_service_fn(|_| async { Ok::<_, hyper::Error>(service_fn(webp_services)) }));
-    prefetch_if_requested(from_cli_args());
+    prefetch_if_requested(from_cli_args(), true, ||{});
     println!("WebP image service on http://{}", addr);
     server.await?;
     Ok(())
 }
 
-fn prefetch_if_requested(config: WebPServerConfig) {
+fn prefetch_if_requested< Callback: 'static + std::marker::Send>(config: WebPServerConfig, verbose: bool, callback: Callback) where
+    Callback: Fn() {
     let prefetch = unsafe { PREFETCH.clone() };
 
     if prefetch.enabled {
@@ -155,7 +156,7 @@ fn prefetch_if_requested(config: WebPServerConfig) {
         let img_path_len = img_path.len();
         let webp_path = String::from(&config.webp_path);
         std::thread::spawn(move || {
-            println!("[INFO] Prefetch Started");
+            if verbose { println!("[INFO] Prefetch Started"); }
             let now = SystemTime::now();
             let mut filecount = 0usize;
             let pool = ThreadPool::new(prefetch.jobs);
@@ -190,10 +191,11 @@ fn prefetch_if_requested(config: WebPServerConfig) {
                 let ticker = tick(Duration::from_micros(500));
                 ticker.recv().unwrap();
                 if pool.queued_count() == 0 && pool.active_count() == 0 {
-                    println!("\n[INFO] Prefetch Done, elapsed time: {:.4} seconds", now.elapsed().unwrap().as_secs_f32());
+                    if verbose { println!("\n[INFO] Prefetch Done, elapsed time: {:.4} seconds", now.elapsed().unwrap().as_secs_f32()); }
+                    callback();
                     return;
                 } else {
-                    print!("\r[INFO] Prefetch Progress: [{}/{}]", filecount - pool.queued_count(), filecount);
+                    if verbose { print!("\r[INFO] Prefetch Progress: [{}/{}]", filecount - pool.queued_count(), filecount); }
                     let _ = std::io::stdout().flush();
                 }
             }
@@ -463,43 +465,93 @@ mod tests {
 
     #[test]
     fn test_convert_mode_1() -> Result<(), io::Error> {
-        let webp_paths = generate_webp_paths(&PathBuf::from("images/webp-server.jpeg"), "/webp-server.jpeg", "./cache");
+        let webp_paths = generate_webp_paths(&PathBuf::from("images/lossless/webp-server.jpeg"), "/lossless/webp-server.jpeg", "./cache");
 
         // try to remove file before testing
-        std::fs::remove_file(&webp_paths.0);
+        let _ = std::fs::remove_file(&webp_paths.0);
         assert!(!webp_paths.0.exists());
 
-        convert("images/webp-server.jpeg", webp_paths.0.to_str().unwrap(), 90.0, 1)?;
+        convert("images/lossless/webp-server.jpeg", webp_paths.0.to_str().unwrap(), 90.0, 1)?;
         assert!(webp_paths.0.exists());
-        std::fs::remove_file(webp_paths.0);
+        let _ = std::fs::remove_file(webp_paths.0);
         Ok(())
     }
 
     #[test]
     fn test_convert_mode_2() -> Result<(), io::Error> {
-        let webp_paths = generate_webp_paths(&PathBuf::from("images/webp-server.jpeg"), "/webp-server.jpeg", "./cache");
+        let webp_paths = generate_webp_paths(&PathBuf::from("images/nearlossless/webp-server.jpeg"), "/nearlossless/webp-server.jpeg", "./cache");
 
         // try to remove file before testing
-        std::fs::remove_file(&webp_paths.0);
+        let _ = std::fs::remove_file(&webp_paths.0);
         assert!(!webp_paths.0.exists());
 
-        convert("images/webp-server.jpeg", webp_paths.0.to_str().unwrap(), 90.0, 2)?;
+        convert("images/nearlossless/webp-server.jpeg", webp_paths.0.to_str().unwrap(), 90.0, 2)?;
         assert!(webp_paths.0.exists());
-        std::fs::remove_file(webp_paths.0);
+        let _ = std::fs::remove_file(webp_paths.0);
         Ok(())
     }
 
     #[test]
     fn test_convert_mode_3() -> Result<(), io::Error> {
-        let webp_paths = generate_webp_paths(&PathBuf::from("images/webp-server.jpeg"), "/webp-server.jpeg", "./cache");
+        let webp_paths = generate_webp_paths(&PathBuf::from("images/lossy/webp-server.jpeg"), "/lossy/webp-server.jpeg", "./cache");
 
         // try to remove file before testing
-        std::fs::remove_file(&webp_paths.0);
+        let _ = std::fs::remove_file(&webp_paths.0);
         assert!(!webp_paths.0.exists());
 
-        convert("images/webp-server.jpeg", webp_paths.0.to_str().unwrap(), 90.0, 3)?;
+        convert("images/lossy/webp-server.jpeg", webp_paths.0.to_str().unwrap(), 90.0, 3)?;
         assert!(webp_paths.0.exists());
-        std::fs::remove_file(webp_paths.0);
+        let _ = std::fs::remove_file(webp_paths.0);
+        Ok(())
+    }
+
+    fn generate_config(img_path: &str, webp_path: &str, mode: i32, quality: f32) -> WebPServerConfig {
+        WebPServerConfig {
+            host: Some("127.0.0.1".to_string()),
+            port: Some(3333),
+            img_path: img_path.to_string(),
+            webp_path: webp_path.to_string(),
+            quality,
+            mode
+        }
+    }
+
+    #[test]
+    fn test_prefetch() -> Result<(), io::Error> {
+        // remove webp cache directory
+        let prefetch_cache_path = "./prefetch-cache";
+        let _ = std::fs::remove_dir_all(prefetch_cache_path);
+        assert!(!PathBuf::from(prefetch_cache_path).exists());
+
+        // enable prefetch
+        unsafe { PREFETCH.enabled = true; };
+
+        let done: std::sync::Arc<std::sync::atomic::AtomicBool> = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let done_copy = std::sync::Arc::clone(&done);
+        prefetch_if_requested(generate_config("./images", prefetch_cache_path, 3, 40.0), false, move ||{
+            let prefetch_images = vec![
+                "./images/webp-server.jpeg",
+                "./images/lossy/webp-server.jpeg",
+                "./images/nearlossless/webp-server.jpeg",
+                "./images/lossless/webp-server.jpeg",
+            ];
+
+            for prefetch_image in prefetch_images {
+                let webp_paths = generate_webp_paths(&PathBuf::from(prefetch_image), &prefetch_image[8..], "./prefetch-cache");
+                assert!(webp_paths.0.exists())
+            }
+
+            let _ = std::fs::remove_dir_all(prefetch_cache_path);
+            done_copy.store(true, std::sync::atomic::Ordering::Relaxed);
+        });
+
+        loop {
+            let ticker = tick(Duration::from_micros(500));
+            ticker.recv().unwrap();
+            if done.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
+        }
         Ok(())
     }
 }
