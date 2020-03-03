@@ -452,3 +452,58 @@ fn get_server_listen_options() -> SocketAddr {
     };
     format!("{}:{}", host, port).parse().unwrap()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_webp_paths() {
+        let webp_paths = generate_webp_paths(&PathBuf::from("./images/webp-server.jpeg"), "/webp-server.jpeg", "./cache");
+        assert!(webp_paths.0.eq(&PathBuf::from(format!("./cache/webp-server.jpeg.{}.webp", std::fs::metadata("./images/webp-server.jpeg").unwrap().modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()))));
+        assert!(webp_paths.1.eq(&PathBuf::from("./cache/")));
+        assert!(webp_paths.2.eq(&PathBuf::from("./images")));
+    }
+
+    #[test]
+    fn test_convert_mode_1() -> Result<(), io::Error> {
+        let webp_paths = generate_webp_paths(&PathBuf::from("images/webp-server.jpeg"), "/webp-server.jpeg", "./cache");
+
+        // try to remove file before testing
+        std::fs::remove_file(&webp_paths.0);
+        assert!(!webp_paths.0.exists());
+
+        convert("images/webp-server.jpeg", webp_paths.0.to_str().unwrap(), 90.0, 1)?;
+        assert!(webp_paths.0.exists());
+        std::fs::remove_file(webp_paths.0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_convert_mode_2() -> Result<(), io::Error> {
+        let webp_paths = generate_webp_paths(&PathBuf::from("images/webp-server.jpeg"), "/webp-server.jpeg", "./cache");
+
+        // try to remove file before testing
+        std::fs::remove_file(&webp_paths.0);
+        assert!(!webp_paths.0.exists());
+
+        convert("images/webp-server.jpeg", webp_paths.0.to_str().unwrap(), 90.0, 2)?;
+        assert!(webp_paths.0.exists());
+        std::fs::remove_file(webp_paths.0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_convert_mode_3() -> Result<(), io::Error> {
+        let webp_paths = generate_webp_paths(&PathBuf::from("images/webp-server.jpeg"), "/webp-server.jpeg", "./cache");
+
+        // try to remove file before testing
+        std::fs::remove_file(&webp_paths.0);
+        assert!(!webp_paths.0.exists());
+
+        convert("images/webp-server.jpeg", webp_paths.0.to_str().unwrap(), 90.0, 3)?;
+        assert!(webp_paths.0.exists());
+        std::fs::remove_file(webp_paths.0);
+        Ok(())
+    }
+}

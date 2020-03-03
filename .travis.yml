@@ -2,6 +2,7 @@ language: rust
 script:
   - make
   - cargo build --verbose --all
+  - cargo test
 
 cache:
   cargo: true
