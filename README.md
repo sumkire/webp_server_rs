@@ -240,6 +240,7 @@ wget https://github.com/webmproject/libwebp/archive/v1.1.0.zip -O v1.1.0.zip
 unzip v1.1.0.zip
 mkdir -p libwebp-1.1.0/build && pushd libwebp-1.1.0/build
 cmake -D CMAKE_BUILD_TYPE=Release ..
+make
 sudo make install
 popd
 
