@@ -9,4 +9,5 @@ webpwrapper.o
 lib/libwebpwrapper.a
 
 .idea/*
+cache/*
 
