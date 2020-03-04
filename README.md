@@ -181,7 +181,7 @@ To enable prefetch feature, using `-p`.
 ```
 ./webp-server-rs -c /path/to/config.json -p 
 # or
-./webp-server-rs --config /path/to/config.json prefetch
+./webp-server-rs --config /path/to/config.json --prefetch
 ```
 
 By default, this will use all logical CPUs available in the system. 
@@ -191,7 +191,7 @@ To set max allowed number of threads that prefetch can use, using `-j`.
 ```
 ./webp-server-rs -c /path/to/config.json -p -j 4 
 # or
-./webp-server-rs --config /path/to/config.json prefetch --jobs 4 
+./webp-server-rs --config /path/to/config.json --prefetch --jobs 4 
 ```
 
 #### screen or tmux
@@ -250,6 +250,8 @@ make
 # build webp-server-rs
 cd webp_server_rs
 cargo build --release
+
+# binary will be located at `target/release/webp-server-rs`
 ```
 
 [![forthebadge](https://forthebadge.com/images/badges/contains-cat-gifs.svg)]()  [![forthebadge](https://forthebadge.com/images/badges/built-with-love.svg)]() 
