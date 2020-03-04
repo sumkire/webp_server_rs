@@ -1,9 +1,8 @@
 language: rust
 script:
-  - make
+  - make libwebpwrapper.a
   - cargo build --verbose --all
   - cargo test
-  - echo "All done, have fun!"
 
 cache:
   cargo: true
