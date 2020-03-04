@@ -1,10 +1,10 @@
 libwebp :
-	wget https://github.com/webmproject/libwebp/archive/v1.1.0.zip -O v1.1.0.zip
-	unzip v1.1.0.zip
+	curl https://codeload.github.com/webmproject/libwebp/tar.gz/v1.1.0 -o v1.1.0.tar.gz
+	tar -xzf v1.1.0.tar.gz
 	mkdir -p libwebp-1.1.0/build && pushd libwebp-1.1.0/build
-	cmake -D CMAKE_BUILD_TYPE=Release ..
+	cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../../deps ..
 	make
-	sudo make install
+	make install
 	popd
 
 libwebpwrapper.a :
