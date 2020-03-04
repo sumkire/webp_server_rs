@@ -459,15 +459,15 @@ mod tests {
 
     #[test]
     fn test_generate_webp_paths() {
-        let webp_paths = generate_webp_paths(&PathBuf::from("./images/webp-server.jpeg"), "/webp-server.jpeg", "./cache");
-        assert!(webp_paths.0.eq(&PathBuf::from(format!("./cache/webp-server.jpeg.{}.webp", std::fs::metadata("./images/webp-server.jpeg").unwrap().modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()))));
+        let webp_paths = generate_webp_paths(&PathBuf::from("./images/webp-server.jpg"), "/webp-server.jpg", "./cache");
+        assert!(webp_paths.0.eq(&PathBuf::from(format!("./cache/webp-server.jpg.{}.webp", std::fs::metadata("./images/webp-server.jpg").unwrap().modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()))));
         assert!(webp_paths.1.eq(&PathBuf::from("./cache/")));
         assert!(webp_paths.2.eq(&PathBuf::from("./images")));
     }
 
     #[test]
     fn test_convert_mode_1() -> Result<(), io::Error> {
-        let webp_paths = generate_webp_paths(&PathBuf::from("./images/lossless/webp-server.jpeg"), "/lossless/webp-server.jpeg", "./cache");
+        let webp_paths = generate_webp_paths(&PathBuf::from("./images/lossless/webp-server.jpg"), "/lossless/webp-server.jpg", "./cache");
 
         // try to remove file before testing
         let _ = std::fs::remove_file(&webp_paths.0);
@@ -476,7 +476,7 @@ mod tests {
         let _ = std::fs::create_dir_all(&webp_paths.1);
         assert!(webp_paths.1.exists(), "Cannot create directory at: {}", webp_paths.1.display());
 
-        let _ = convert("images/lossless/webp-server.jpeg", webp_paths.0.to_str().unwrap(), 90.0, 1)?;
+        let _ = convert("images/lossless/webp-server.jpg", webp_paths.0.to_str().unwrap(), 90.0, 1)?;
         assert!(webp_paths.0.exists(), "Converted WebP image should be at {}, but wasn't", webp_paths.0.display());
         let _ = std::fs::remove_file(webp_paths.0);
         Ok(())
@@ -484,7 +484,7 @@ mod tests {
 
     #[test]
     fn test_convert_mode_2() -> Result<(), io::Error> {
-        let webp_paths = generate_webp_paths(&PathBuf::from("./images/nearlossless/webp-server.jpeg"), "/nearlossless/webp-server.jpeg", "./cache");
+        let webp_paths = generate_webp_paths(&PathBuf::from("./images/nearlossless/webp-server.jpg"), "/nearlossless/webp-server.jpg", "./cache");
 
         // try to remove file before testing
         let _ = std::fs::remove_file(&webp_paths.0);
@@ -493,7 +493,7 @@ mod tests {
         let _ = std::fs::create_dir_all(&webp_paths.1);
         assert!(webp_paths.1.exists(), "Cannot create directory at: {}", webp_paths.1.display());
 
-        convert("images/nearlossless/webp-server.jpeg", webp_paths.0.to_str().unwrap(), 90.0, 2)?;
+        convert("images/nearlossless/webp-server.jpg", webp_paths.0.to_str().unwrap(), 90.0, 2)?;
         assert!(webp_paths.0.exists(), "Converted WebP image should be at {}, but wasn't", webp_paths.0.display());
         let _ = std::fs::remove_file(webp_paths.0);
         Ok(())
@@ -501,7 +501,7 @@ mod tests {
 
     #[test]
     fn test_convert_mode_3() -> Result<(), io::Error> {
-        let webp_paths = generate_webp_paths(&PathBuf::from("./images/lossy/webp-server.jpeg"), "/lossy/webp-server.jpeg", "./cache");
+        let webp_paths = generate_webp_paths(&PathBuf::from("./images/lossy/webp-server.jpg"), "/lossy/webp-server.jpg", "./cache");
 
         // try to remove file before testing
         let _ = std::fs::remove_file(&webp_paths.0);
@@ -510,7 +510,7 @@ mod tests {
         let _ = std::fs::create_dir_all(&webp_paths.1);
         assert!(webp_paths.1.exists(), "Cannot create directory at: {}", webp_paths.1.display());
 
-        convert("images/lossy/webp-server.jpeg", webp_paths.0.to_str().unwrap(), 90.0, 3)?;
+        convert("images/lossy/webp-server.jpg", webp_paths.0.to_str().unwrap(), 90.0, 3)?;
         assert!(webp_paths.0.exists(), "Converted WebP image should be at {}, but wasn't", webp_paths.0.display());
         let _ = std::fs::remove_file(webp_paths.0);
         Ok(())
@@ -541,10 +541,10 @@ mod tests {
         let done_copy = std::sync::Arc::clone(&done);
         prefetch_if_requested(generate_config("./images", prefetch_cache_path, 3, 40.0), false, move ||{
             let prefetch_images = vec![
-                "./images/webp-server.jpeg",
-                "./images/lossy/webp-server.jpeg",
-                "./images/nearlossless/webp-server.jpeg",
-                "./images/lossless/webp-server.jpeg",
+                "./images/webp-server.jpg",
+                "./images/lossy/webp-server.jpg",
+                "./images/nearlossless/webp-server.jpg",
+                "./images/lossless/webp-server.jpg",
             ];
 
             for prefetch_image in prefetch_images {
