@@ -16,7 +16,13 @@ env:
   global:
     - RUST_BACKTRACE=1
 
+arch:
+  - amd64
+  - arm64
+  - ppc64le
+
 os:
+  - windows
   - linux
   - osx
 
@@ -24,6 +30,7 @@ matrix:
   fast_finish: true
   allow_failures:
     - rust: nightly
+    - os: windows
 
 before_script:
   - rm v1.1.0.tar.gz || true
