@@ -12,10 +12,10 @@ use libc::{size_t, c_int, c_uchar};
 use num_cpus;
 use serde::Deserialize;
 use std::cmp::{max, min};
-use std::ffi::c_void;
 use std::io;
 use std::io::prelude::*;
 use std::io::BufReader;
+use std::net::SocketAddr;
 use std::option::Option;
 use std::os::raw::c_float;
 use std::path::{Path, PathBuf};
@@ -25,7 +25,6 @@ use std::time::{Duration, SystemTime};
 use threadpool::ThreadPool;
 use tokio::fs;
 use walkdir::WalkDir;
-use std::net::SocketAddr;
 
 macro_rules! generate_http_response_builder {
     ($status_code:expr, $body:expr) => {{
@@ -54,26 +53,11 @@ macro_rules! sendfile {
 }
 
 #[link(name = "webp", kind = "static")]
-extern {
-    fn WebPPictureImportRGB(picture: *mut c_void, rgb: *const u8, rgb_stride: c_int) -> c_int;
-    fn WebPPictureImportRGBA(picture: *mut c_void, rgb: *const u8, rgb_stride: c_int) -> c_int;
-    fn WebPPictureImportBGR(picture: *mut c_void, rgb: *const u8, rgb_stride: c_int) -> c_int;
-    fn WebPPictureImportBGRA(picture: *mut c_void, rgb: *const u8, rgb_stride: c_int) -> c_int;
-}
-
 #[link(name = "webpwrapper", kind = "static")]
 extern {
     fn webp_encoder(rgba: *const u8, width: c_int, height: c_int, stride: c_int,
-              importer: unsafe extern "C" fn(*mut c_void, *const u8, c_int) -> c_int,
-              quality_factor: c_float, encode_type: c_int, output: &*mut c_uchar
+              importer: c_int, quality_factor: c_float, encode_type: c_int, output: &*mut c_uchar
     ) -> size_t;
-}
-
-macro_rules! encode_to_webp_image {
-    ($using_importer:ident, $metadata:expr, $quality:expr, $lossless:expr, $output:expr) => {
-        unsafe { webp_encoder($metadata.data_ptr, $metadata.width, $metadata.height, $metadata.stride,
-                              $using_importer, $quality, $lossless, $output) }
-    };
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -116,24 +100,6 @@ struct PrefetchConfig {
 }
 
 static mut PREFETCH: PrefetchConfig = PrefetchConfig { enabled: false, jobs: 1 };
-
-#[derive(Debug)]
-struct ImageMetadata {
-    width: i32,
-    height: i32,
-    data_ptr: *const u8,
-    stride: i32
-}
-
-macro_rules! get_image_metadata {
-    ($image:expr, $components_per_pixel:expr) => {{
-        let width = $image.width() as i32;
-        let height = $image.height() as i32;
-        let data_ptr = $image.into_raw().as_ptr();
-        let stride = width * $components_per_pixel;
-        ImageMetadata { width, height, data_ptr, stride }
-    }};
-}
 
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -335,34 +301,70 @@ async fn webp_services(req: Request<Body>) -> hyper::Result<Response<Body>> {
 fn convert(original_file_path: &str, webp_file_path: &str, quality: f32, mode: i32) -> Result<(), io::Error> {
     match image::open(original_file_path) {
         Ok(image) => {
-            let metadata ;
+            static WEBP_PICTURE_IMPORT_RGB: i32 = 1;
+            static WEBP_PICTURE_IMPORT_RGBA: i32 = 2;
+            static WEBP_PICTURE_IMPORT_BGR: i32 = 3;
+            static WEBP_PICTURE_IMPORT_BGRA: i32 = 4;
+
             let encoded_size: size_t;
             let encoded_data: *mut c_uchar = null_mut();
 
             match image {
                 image::DynamicImage::ImageBgr8(image) => {
-                    metadata = get_image_metadata!(image, 3);
-                    encoded_size = encode_to_webp_image!(WebPPictureImportBGR, metadata, quality, mode, &encoded_data);
+                    let width = image.width() as i32;
+                    let height = image.height() as i32;
+                    let data = image.into_raw();
+                    let data_ptr = data.as_ptr();
+                    let stride = width * 3;
+                    encoded_size = unsafe { webp_encoder(data_ptr, width, height, stride,
+                                          WEBP_PICTURE_IMPORT_BGR, quality, mode, &encoded_data) };
                 },
                 image::DynamicImage::ImageRgb8(image) => {
-                    metadata = get_image_metadata!(image, 3);
-                    encoded_size = encode_to_webp_image!(WebPPictureImportRGB, metadata, quality, mode, &encoded_data);
+                    let width = image.width() as i32;
+                    let height = image.height() as i32;
+                    let data = image.into_raw();
+                    let data_ptr = data.as_ptr();
+                    let stride = width * 3;
+                    encoded_size = unsafe { webp_encoder(data_ptr, width, height, stride,
+                                                         WEBP_PICTURE_IMPORT_RGB, quality, mode, &encoded_data) };
                 }
                 image::DynamicImage::ImageBgra8(image) => {
-                    metadata = get_image_metadata!(image, 4);
-                    encoded_size = encode_to_webp_image!(WebPPictureImportBGRA, metadata, quality, mode, &encoded_data);
+                    let width = image.width() as i32;
+                    let height = image.height() as i32;
+                    let data = image.into_raw();
+                    let data_ptr = data.as_ptr();
+                    let stride = width * 4;
+                    encoded_size = unsafe { webp_encoder(data_ptr, width, height, stride,
+                                                         WEBP_PICTURE_IMPORT_BGRA, quality, mode, &encoded_data) };
                 },
                 image::DynamicImage::ImageRgba8(image) => {
-                    metadata = get_image_metadata!(image, 4);
-                    encoded_size = encode_to_webp_image!(WebPPictureImportRGBA, metadata, quality, mode, &encoded_data);
+                    let width = image.width() as i32;
+                    let height = image.height() as i32;
+                    let data = image.into_raw();
+                    let data_ptr = data.as_ptr();
+                    let stride = width * 4;
+                    encoded_size = unsafe { webp_encoder(data_ptr, width, height, stride,
+                                                         WEBP_PICTURE_IMPORT_BGRA, quality, mode, &encoded_data) };
                 }
                 image::DynamicImage::ImageRgb16(_) | image::DynamicImage::ImageLuma8(_) | image::DynamicImage::ImageLuma16(_) => {
-                    metadata = get_image_metadata!(image.to_rgb(), 3);
-                    encoded_size = encode_to_webp_image!(WebPPictureImportRGB, metadata, quality, mode, &encoded_data);
+                    let image = image.into_rgb();
+                    let width = image.width() as i32;
+                    let height = image.height() as i32;
+                    let data = image.into_raw();
+                    let data_ptr = data.as_ptr();
+                    let stride = width * 3;
+                    encoded_size = unsafe { webp_encoder(data_ptr, width, height, stride,
+                                                         WEBP_PICTURE_IMPORT_RGB, quality, mode, &encoded_data) };
                 },
                 image::DynamicImage::ImageRgba16(_) | image::DynamicImage::ImageLumaA8(_) | image::DynamicImage::ImageLumaA16(_) => {
-                    metadata = get_image_metadata!(image.to_rgba(), 4);
-                    encoded_size = encode_to_webp_image!(WebPPictureImportRGBA, metadata, quality, mode, &encoded_data);
+                    let image = image.into_rgba();
+                    let width = image.width() as i32;
+                    let height = image.height() as i32;
+                    let data = image.into_raw();
+                    let data_ptr = data.as_ptr();
+                    let stride = width * 4;
+                    encoded_size = unsafe { webp_encoder(data_ptr, width, height, stride,
+                                                         WEBP_PICTURE_IMPORT_RGBA, quality, mode, &encoded_data) };
                 }
             };
 
@@ -465,42 +467,51 @@ mod tests {
 
     #[test]
     fn test_convert_mode_1() -> Result<(), io::Error> {
-        let webp_paths = generate_webp_paths(&PathBuf::from("images/lossless/webp-server.jpeg"), "/lossless/webp-server.jpeg", "./cache");
+        let webp_paths = generate_webp_paths(&PathBuf::from("./images/lossless/webp-server.jpeg"), "/lossless/webp-server.jpeg", "./cache");
 
         // try to remove file before testing
         let _ = std::fs::remove_file(&webp_paths.0);
-        assert!(!webp_paths.0.exists());
+        assert!(!webp_paths.0.exists(), "Cannot remove old cached file at: {}", webp_paths.0.display());
+        // and create corresponding directory
+        let _ = std::fs::create_dir_all(&webp_paths.1);
+        assert!(webp_paths.1.exists(), "Cannot create directory at: {}", webp_paths.1.display());
 
-        convert("images/lossless/webp-server.jpeg", webp_paths.0.to_str().unwrap(), 90.0, 1)?;
-        assert!(webp_paths.0.exists());
+        let _ = convert("images/lossless/webp-server.jpeg", webp_paths.0.to_str().unwrap(), 90.0, 1)?;
+        assert!(webp_paths.0.exists(), "Converted WebP image should be at {}, but wasn't", webp_paths.0.display());
         let _ = std::fs::remove_file(webp_paths.0);
         Ok(())
     }
 
     #[test]
     fn test_convert_mode_2() -> Result<(), io::Error> {
-        let webp_paths = generate_webp_paths(&PathBuf::from("images/nearlossless/webp-server.jpeg"), "/nearlossless/webp-server.jpeg", "./cache");
+        let webp_paths = generate_webp_paths(&PathBuf::from("./images/nearlossless/webp-server.jpeg"), "/nearlossless/webp-server.jpeg", "./cache");
 
         // try to remove file before testing
         let _ = std::fs::remove_file(&webp_paths.0);
-        assert!(!webp_paths.0.exists());
+        assert!(!webp_paths.0.exists(), "Cannot remove old cached file at: {}", webp_paths.0.display());
+        // and create corresponding directory
+        let _ = std::fs::create_dir_all(&webp_paths.1);
+        assert!(webp_paths.1.exists(), "Cannot create directory at: {}", webp_paths.1.display());
 
         convert("images/nearlossless/webp-server.jpeg", webp_paths.0.to_str().unwrap(), 90.0, 2)?;
-        assert!(webp_paths.0.exists());
+        assert!(webp_paths.0.exists(), "Converted WebP image should be at {}, but wasn't", webp_paths.0.display());
         let _ = std::fs::remove_file(webp_paths.0);
         Ok(())
     }
 
     #[test]
     fn test_convert_mode_3() -> Result<(), io::Error> {
-        let webp_paths = generate_webp_paths(&PathBuf::from("images/lossy/webp-server.jpeg"), "/lossy/webp-server.jpeg", "./cache");
+        let webp_paths = generate_webp_paths(&PathBuf::from("./images/lossy/webp-server.jpeg"), "/lossy/webp-server.jpeg", "./cache");
 
         // try to remove file before testing
         let _ = std::fs::remove_file(&webp_paths.0);
-        assert!(!webp_paths.0.exists());
+        assert!(!webp_paths.0.exists(), "Cannot remove old cached file at: {}", webp_paths.0.display());
+        // and create corresponding directory
+        let _ = std::fs::create_dir_all(&webp_paths.1);
+        assert!(webp_paths.1.exists(), "Cannot create directory at: {}", webp_paths.1.display());
 
         convert("images/lossy/webp-server.jpeg", webp_paths.0.to_str().unwrap(), 90.0, 3)?;
-        assert!(webp_paths.0.exists());
+        assert!(webp_paths.0.exists(), "Converted WebP image should be at {}, but wasn't", webp_paths.0.display());
         let _ = std::fs::remove_file(webp_paths.0);
         Ok(())
     }

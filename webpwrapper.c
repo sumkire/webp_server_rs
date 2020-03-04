@@ -10,8 +10,13 @@
 
 typedef int (*Importer)(WebPPicture* const, const uint8_t* const, int);
 
+#define WebPPictureImportRGBType 1
+#define WebPPictureImportRGBAType 2
+#define WebPPictureImportBGRType 3
+#define WebPPictureImportBGRAType 4
+
 size_t webp_encoder(const uint8_t* rgba, int width, int height, int stride,
-                     Importer import, float quality_factor, int type,
+                     int importer_type, float quality_factor, int type,
                      uint8_t** output) {
   WebPPicture pic;
   WebPConfig config;
@@ -25,18 +30,39 @@ size_t webp_encoder(const uint8_t* rgba, int width, int height, int stride,
     return 0;  // shouldn't happen, except if system installation is broken
   }
 
-    if (type == 0) {
-        config.lossless = 1;
-        pic.use_argb = 1;
-    } else if (type == 1) {
-        config.lossless = 1;
-        pic.use_argb = 1;
-        config.near_lossless = quality_factor;
-    } else {
-        config.lossless = 0;
-        pic.use_argb = 0;
-        config.quality = quality_factor;
+  if (type == 0) {
+    config.lossless = 1;
+    pic.use_argb = 1;
+  } else if (type == 1) {
+    config.lossless = 1;
+    pic.use_argb = 1;
+    config.near_lossless = quality_factor;
+  } else {
+    config.lossless = 0;
+    pic.use_argb = 0;
+    config.quality = quality_factor;
+  }
+  
+  Importer import = 0;
+  switch (importer_type) {
+  	case WebPPictureImportRGBType:
+      import = WebPPictureImportRGB;
+      break;
+    case WebPPictureImportRGBAType:
+      import = WebPPictureImportRGBA;
+      break;
+    case WebPPictureImportBGRType:
+      import = WebPPictureImportBGR;
+      break;
+    case WebPPictureImportBGRAType:
+      import = WebPPictureImportBGRA;
+      break;
+    default: {
+      *output = NULL;
+      return 0;
+      break;
     }
+  }
   
   pic.width = width;
   pic.height = height;
