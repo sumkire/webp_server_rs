@@ -11,3 +11,5 @@ lib/libwebpwrapper.a
 .idea/*
 cache/*
 
+debian-package/usr/local/bin/webp-server-rs
+

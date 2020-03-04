@@ -236,6 +236,8 @@ Install latest version of Rust, clone the repo, and then...
 apt install cmake unzip
 
 # download and build libwebp
+make libwebp
+## or you can run the script in the `Makefile` for `libwebp` target by yourself
 wget https://github.com/webmproject/libwebp/archive/v1.1.0.zip -O v1.1.0.zip
 unzip v1.1.0.zip
 mkdir -p libwebp-1.1.0/build && pushd libwebp-1.1.0/build
@@ -244,12 +246,16 @@ make
 sudo make install
 popd
 
-# build webpwrapper
-make
-
 # build webp-server-rs
 cd webp_server_rs
-cargo build --release
+## for release version
+make release
+## for debug version
+make debug
+
+# build debian package
+## requires dpkg-deb
+make deb
 
 # binary will be located at `target/release/webp-server-rs`
 ```
