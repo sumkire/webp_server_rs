@@ -538,6 +538,9 @@ mod tests {
 
             for prefetch_image in prefetch_images {
                 let webp_paths = generate_webp_paths(&PathBuf::from(prefetch_image), &prefetch_image[8..], "./prefetch-cache");
+                if !webp_paths.0.exists() {
+                    done_copy.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
                 assert!(webp_paths.0.exists())
             }
 
