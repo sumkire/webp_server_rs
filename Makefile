@@ -9,7 +9,7 @@ libwebp :
 
 libwebpwrapper.a :
 	@rm -f lib/libwebpwrapper.a
-	cc -c -fPIC -Os webpwrapper.c -o webpwrapper.o
+	cc -c -fPIC -Os -I./deps/include webpwrapper.c -o webpwrapper.o
 	ar rcs lib/libwebpwrapper.a webpwrapper.o
 
 release : libwebpwrapper.a
