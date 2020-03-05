@@ -304,37 +304,48 @@ location ~* \.(png|jpg|jpeg)$ {
 ### Build your own binaries
 Install latest version of Rust, clone the repo, and then...
 
+#### 1. install cmake and curl with apt or whatever package manager on your system
 ```bash
-# install cmake and curl with apt or whatever package manager on your system
+# debian
 apt install cmake curl
+```
 
-# download and build libwebp
+#### 2. download and build libwebp
+```bash
+# macOS / Linux
 make libwebp
-## or you can run the script in the `Makefile` for `libwebp` target by yourself
+
+# windows
 curl https://codeload.github.com/webmproject/libwebp/tar.gz/v1.1.0 -o v1.1.0.tar.gz
 tar -xzf v1.1.0.tar.gz
-mkdir -p libwebp-1.1.0/build && pushd libwebp-1.1.0/build
+mkdir -p libwebp-1.1.0/build && cd libwebp-1.1.0/build
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../../deps \
-      -DWEBP_BUILD_CWEBP=OFF -DWEBP_BUILD_DWEBP=OFF -DWEBP_BUILD_GIF2WEBP=OFF \
-      -DWEBP_BUILD_IMG2WEBP=OFF -DWEBP_BUILD_VWEBP=OFF -DWEBP_BUILD_WEBPINFO=OFF \
-      -DWEBP_BUILD_WEBPMUX=OFF -DWEBP_BUILD_EXTRAS=OFF -DWEBP_BUILD_WEBP_JS=OFF \
-      -DWEBP_BUILD_ANIM_UTILS=OFF -DWEBP_NEAR_LOSSLESS=ON ..
+  -DWEBP_BUILD_CWEBP=OFF -DWEBP_BUILD_DWEBP=OFF -DWEBP_BUILD_GIF2WEBP=OFF \
+  -DWEBP_BUILD_IMG2WEBP=OFF -DWEBP_BUILD_VWEBP=OFF -DWEBP_BUILD_WEBPINFO=OFF \
+  -DWEBP_BUILD_WEBPMUX=OFF -DWEBP_BUILD_EXTRAS=OFF -DWEBP_BUILD_WEBP_JS=OFF \
+  -DWEBP_BUILD_ANIM_UTILS=OFF -DWEBP_NEAR_LOSSLESS=ON ..
 cmake --build .
 cmake --install .
-popd
+cd ../..
+```
 
-# build webp-server-rs
-cd webp_server_rs
-## for release version
-make release
-## for debug version
-make debug
+#### 3. build static webpwrapper library
+```bash
+# macOS / Linux
+make libwebpwrapper.a
 
-# build debian package
-## requires dpkg-deb
-make deb
+## windows
+cl -c webpwrapper.c -I./deps/include
+lib webpwrapper.obj /out:lib/webpwrapper.lib
+```
 
+#### 4. build webp-server-rs
+```bash
 # binary will be located at `target/release/webp-server-rs`
+cargo build --release
+
+# test
+cargo test --release
 ```
 
 [![forthebadge](https://forthebadge.com/images/badges/contains-cat-gifs.svg)]()  [![forthebadge](https://forthebadge.com/images/badges/built-with-love.svg)]() 
