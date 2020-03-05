@@ -1,5 +1,5 @@
 {
-    "mode": 2,
-    "quality": 90
+    "quality": 60,
+    "near_lossless": 80
 }
 

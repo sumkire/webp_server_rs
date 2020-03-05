@@ -1,3 +1,8 @@
+libwebpwrapper.a :
+	@rm -f lib/libwebpwrapper.a
+	cc -c -fPIC -Os -I./deps/include webpwrapper.c -o webpwrapper.o
+	ar rcs lib/libwebpwrapper.a webpwrapper.o
+
 libwebp :
 	curl https://codeload.github.com/webmproject/libwebp/tar.gz/v1.1.0 -o v1.1.0.tar.gz
 	tar -xzf v1.1.0.tar.gz
@@ -6,11 +11,6 @@ libwebp :
 	make
 	make install
 	popd
-
-libwebpwrapper.a :
-	@rm -f lib/libwebpwrapper.a
-	cc -c -fPIC -Os -I./deps/include webpwrapper.c -o webpwrapper.o
-	ar rcs lib/libwebpwrapper.a webpwrapper.o
 
 release : libwebpwrapper.a
 	cargo build --release

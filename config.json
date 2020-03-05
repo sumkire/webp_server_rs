@@ -1,8 +1,9 @@
 {
-	"host": "127.0.0.1",
-	"port": 3333,
-	"img_path": "./images",
-	"webp_path": "./cache",
-	"quality": 80,
-	"mode": 2
+  "host": "127.0.0.1",
+  "port": 3333,
+  "img_path": "./images",
+  "webp_path": "./cache",
+  "global_config":  {
+    "quality": 80
+  }
 }
