@@ -31,7 +31,6 @@ matrix:
   fast_finish: true
   allow_failures:
     - rust: nightly
-    - os: windows
 
 before_script:
   - rm v1.1.0.tar.gz || true
@@ -39,7 +38,7 @@ before_script:
   - curl https://codeload.github.com/webmproject/libwebp/tar.gz/v1.1.0 -o v1.1.0.tar.gz
   - tar -xzf v1.1.0.tar.gz
   - mkdir -p libwebp-1.1.0/build && cd libwebp-1.1.0/build && cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../../deps -DWEBP_BUILD_CWEBP=OFF -DWEBP_BUILD_DWEBP=OFF -DWEBP_BUILD_GIF2WEBP=OFF -DWEBP_BUILD_IMG2WEBP=OFF -DWEBP_BUILD_VWEBP=OFF -DWEBP_BUILD_WEBPINFO=OFF -DWEBP_BUILD_WEBPMUX=OFF -DWEBP_BUILD_EXTRAS=OFF -DWEBP_BUILD_WEBP_JS=OFF -DWEBP_BUILD_ANIM_UTILS=OFF -DWEBP_NEAR_LOSSLESS=ON ..
-  - if [ "$TRAVIS_OS_NAME" == "windows" ]; then cmake --build . ; fi
+  - if [ "$TRAVIS_OS_NAME" == "windows" ]; then cmake --build . --config Release ; fi
   - if [ "$TRAVIS_OS_NAME" == "windows" ]; then cmake --install . ; fi
   - if [ "$TRAVIS_OS_NAME" != "windows" ]; then make && make install; fi
   - cd ../..

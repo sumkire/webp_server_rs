@@ -25,10 +25,10 @@ Well, in aforementioned blog post, I said that it would be better if it was writ
 
 - `webp_server` with `node_modules`: 43M
 
-|                                                              | Darwin x86_64 | Linux amd64 | Linux arm64 |
-| ------------------------------------------------------------ | ------------- | ----------- | ----------- |
-| [webp-server-go](https://github.com/webp-sh/webp_server_go)  | 15.4 MB       | 13.5 MB     | 10.5 MB     |
-| [webp-server-rs](https://github.com/BlueCocoa/webp_server_rs) | 2.0 MB        | 2.5 MB      | 2.07 MB     |
+|                                                              | Darwin x86_64 | Linux amd64 | Linux arm64 | Windows amd64 |
+| ------------------------------------------------------------ | ------------- | ----------- | ----------- | ------------- |
+| [webp-server-go](https://github.com/webp-sh/webp_server_go)  | 10.6 MB       | 9.52 MB     | 8.83 MB     | 9.31 MB       |
+| [webp-server-rs](https://github.com/BlueCocoa/webp_server_rs) | 2.0 MB        | 2.5 MB      | 2.07 MB     | 2.41 MB       |
 
 #### Convenience
 
