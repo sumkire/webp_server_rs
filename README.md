@@ -1,8 +1,6 @@
 # webp-server-rs ![Build Status](https://travis-ci.com/BlueCocoa/webp_server_rs.svg?branch=master)
 Generate WebP image on-the-fly with Rust!
 
-THIS PROJECT IS WORKING IN PROGRESS, DON'T USE IT IN PRODUCTION ENVIRONMENT.
-
 ## Background
 
 Speaking of switching to WebP image, at the first glance, I just did it with [a very naive approach](https://blog.0xbbc.com/2019/10/moving-to-webp-image-with-fallback-to-png/).
@@ -27,22 +25,30 @@ Well, in aforementioned blog post, I said that it would be better if it was writ
 
 - `webp_server` with `node_modules`: 43M
 
-|                                                              | Darwin x86_64 | Linux amd64 |
-| ------------------------------------------------------------ | ------------- | ----------- |
-| [webp-server-go](https://github.com/webp-sh/webp_server_go)  | 15.4MB        | 13.5MB      |
-| [webp-server-rs](https://github.com/BlueCocoa/webp_server_rs) | 2.01MB        | 2.5MB       |
+|                                                              | Darwin x86_64 | Linux amd64 | Linux arm64 |
+| ------------------------------------------------------------ | ------------- | ----------- | ----------- |
+| [webp-server-go](https://github.com/webp-sh/webp_server_go)  | 15.4 MB       | 13.5 MB     | 10.5 MB     |
+| [webp-server-rs](https://github.com/BlueCocoa/webp_server_rs) | 2.0 MB        | 2.5 MB      | 2.07 MB     |
 
 #### Convenience
 
 - webp_server: Clone the repo -> npm install -> run with pm2
-- webp-server(go): Download a single binary -> Run
-- webp-server(rust): Download a single binary -> Run
+- webp-server-go: Download a single binary -> Run
+- webp-server-rs: Download a single binary -> Run
 
 #### Performance
 
 Not really tested. But IMHO it should be as fast as golang version.
 
-### Supported Image Formats
+#### Precision Control
+
+webp-server-rust allows you set directory-level config and all libwebp parameters are available to you.
+
+#### Supported Image Formats
+
+webp-server-rust supports more image formats than webp-server-go.
+
+Also GIF support is under consideration, currently webp-server-rust can only output the first frame of a GIF file. 
 
 | Format | Converting |
 | ------ | ---------- |
