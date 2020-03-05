@@ -1,7 +1,7 @@
 language: rust
 script:
   - if [ "$TRAVIS_OS_NAME" != "windows" ]; then make libwebpwrapper.a; fi
-  - if [ "$TRAVIS_OS_NAME" == "windows" ]; then cl -c webpwrapper.c -I./deps/include; lib webpwrapper.obj /out:lib/webpwrapper.lib; fi 
+  - if [ "$TRAVIS_OS_NAME" == "windows" ]; then cl.exe -c webpwrapper.c -I./deps/include; lib.exe webpwrapper.obj /out:lib/webpwrapper.lib; fi 
   - cargo build --verbose --release --all
   - cargo test --release
 
