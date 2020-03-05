@@ -129,8 +129,6 @@ int alpha_quality;      // Between 0 (smallest size) and 100 (lossless).
                         // Default is 100.
                         
 int pass;               // number of entropy-analysis passes (in [1..10]).
-int show_compressed;    // if true, export the compressed picture back.
-                        // In-loop filtering is not applied.
                         
 int preprocessing;      // preprocessing filter:
                         // 0=none, 1=segment-smooth, 2=pseudo-random dithering
