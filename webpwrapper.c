@@ -7,6 +7,7 @@
 //
 
 #include <stdlib.h>
+#include <string.h>
 #include <strings.h>
 #include <webp/encode.h>
 
