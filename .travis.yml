@@ -2,8 +2,7 @@ language: rust
 script:
   - mkdir -p webpwrapper/build && cd webpwrapper/build
   - cmake -G "$CMAKE_G_TYPE" ..
-  - if [ "$TRAVIS_OS_NAME" != "windows" ]; then make && make install; fi
-  - if [ "$TRAVIS_OS_NAME" == "windows" ]; then cmake --build . --config Release && cmake --install . ; fi
+  - cmake --build . --config Release && cmake --install .
   - cd ../..
   - cargo build --verbose --release --all
   - cargo test --release
@@ -17,7 +16,6 @@ rust:
   - nightly
 
 env:
-  - RUST_BACKTRACE=1
   - BADGE=osx
   - BADGE=linux
   - BADGE=windows
@@ -39,19 +37,20 @@ matrix:
     - os: windows
   exclude:
     - os: osx
-      env: 
-        - BADGE=linux
-        - BADGE=windows
+      env: BADGE=linux
+    - os: osx
+      env: BADGE=windows
     - os: linux
-      env: 
-        - BADGE=osx
-        - BADGE=windows
+      env: BADGE=osx
+    - os: linux
+      env: BADGE=windows
     - os: windows
-      env:
-        - BADGE=osx
-        - BADGE=linux
+      env: BADGE=osx
+    - os: windows
+      env: BADGE=linux
 
 before_script:
+  - export RUST_BACKTRACE=1
   - curl https://codeload.github.com/webmproject/libwebp/tar.gz/v1.1.0 -o libwebp-1.1.0.tar.gz
   - tar -xzf libwebp-1.1.0.tar.gz
   - mkdir -p libwebp-1.1.0/build && cd libwebp-1.1.0/build
