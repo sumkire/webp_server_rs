@@ -25,7 +25,7 @@ Well, in aforementioned blog post, I said that it would be better if it was writ
 
 - `webp_server` with `node_modules`: 43M
 
-|                                                              | Darwin x86_64 | Linux amd64 | Linux arm64 | Windows amd64 |
+|                                                              | Darwin amd64 | Linux amd64 | Linux arm64 | Windows amd64 |
 | ------------------------------------------------------------ | ------------- | ----------- | ----------- | ------------- |
 | [webp-server-go](https://github.com/webp-sh/webp_server_go)  | 10.6 MB       | 9.52 MB     | 8.83 MB     | 9.31 MB       |
 | [webp-server-rs](https://github.com/BlueCocoa/webp_server_rs) | 2.0 MB        | 2.5 MB      | 2.07 MB     | 2.41 MB       |
@@ -312,14 +312,19 @@ apt install cmake curl
 
 #### 2. download and build libwebp
 ```bash
-# macOS / Linux, and windows user who has `make`
+# macOS / Linux
 make libwebp
 
 # windows
 curl https://codeload.github.com/webmproject/libwebp/tar.gz/v1.1.0 -o v1.1.0.tar.gz
 tar -xzf v1.1.0.tar.gz
 mkdir -p libwebp-1.1.0/build && cd libwebp-1.1.0/build
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../../deps \
+## for VS 9.0 to VS 15.0
+## please set generator that fits your system, e.g., "Visual Studio 15 2017 Win64"
+## for VS 16.0
+## you may use "Visual Studio 15 2017 Win64", or -G "Visual Studio 16 2019" -A x64
+cmake -G "Visual Studio 15 2017 Win64" \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../../deps \
   -DWEBP_BUILD_CWEBP=OFF -DWEBP_BUILD_DWEBP=OFF -DWEBP_BUILD_GIF2WEBP=OFF \
   -DWEBP_BUILD_IMG2WEBP=OFF -DWEBP_BUILD_VWEBP=OFF -DWEBP_BUILD_WEBPINFO=OFF \
   -DWEBP_BUILD_WEBPMUX=OFF -DWEBP_BUILD_EXTRAS=OFF -DWEBP_BUILD_WEBP_JS=OFF \
@@ -337,7 +342,11 @@ make libwebpwrapper
 # windows
 mkdir -p webpwrapper/build
 cd webpwrapper/build
-cmake ..
+## for VS 9.0 to VS 15.0
+## please set generator that fits your system, e.g., "Visual Studio 15 2017 Win64"
+## for VS 16.0
+## you may use "Visual Studio 15 2017 Win64", or -G "Visual Studio 16 2019" -A x64
+cmake -G "Visual Studio 15 2017 Win64" ..
 cmake --build . --config Release
 cmake --install
 ```
