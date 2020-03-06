@@ -8,7 +8,7 @@ libwebp :
 		-DWEBP_BUILD_VWEBP=OFF -DWEBP_BUILD_WEBPINFO=OFF -DWEBP_BUILD_WEBPMUX=OFF \
 		-DWEBP_BUILD_EXTRAS=OFF -DWEBP_BUILD_WEBP_JS=OFF -DWEBP_BUILD_ANIM_UTILS=OFF \
 		-DWEBP_NEAR_LOSSLESS=ON ..
-	cd libwebp-1.1.0/build && cmake --build . --config Release && cmake --install .
+	cd libwebp-1.1.0/build && make && make install
 
 libwebpwrapper :
 	@rm -rf webpwrapper/build

@@ -2,7 +2,9 @@ language: rust
 script:
   - mkdir -p webpwrapper/build && cd webpwrapper/build
   - cmake -G "$CMAKE_G_TYPE" ..
-  - cmake --build . --config Release && cmake --install .
+  - cmake --build . --config Release
+  - if [ "$TRAVIS_OS_NAME" != "windows" ]; then make install; fi
+  - if [ "$TRAVIS_OS_NAME" == "windows" ]; then cmake --install . ; fi
   - cd ../..
   - cargo build --verbose --release --all
   - cargo test --release
