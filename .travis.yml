@@ -58,6 +58,7 @@ before_script:
   - mkdir -p libwebp-1.1.0/build && cd libwebp-1.1.0/build
   - export CMAKE_G_TYPE="Unix Makefiles"
   - if [ "$TRAVIS_OS_NAME" == "windows" ]; then export CMAKE_G_TYPE="Visual Studio 15 2017 Win64"; fi
+  - if [ "$TRAVIS_OS_NAME" == "windows" ]; then rustup toolchain install stable-x86_64-pc-windows-msvc; rustup default stable-x86_64-pc-windows-msvc; fi
   - cmake -G "$CMAKE_G_TYPE" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../../deps -DWEBP_BUILD_CWEBP=OFF -DWEBP_BUILD_DWEBP=OFF -DWEBP_BUILD_GIF2WEBP=OFF -DWEBP_BUILD_IMG2WEBP=OFF -DWEBP_BUILD_VWEBP=OFF -DWEBP_BUILD_WEBPINFO=OFF -DWEBP_BUILD_WEBPMUX=OFF -DWEBP_BUILD_EXTRAS=OFF -DWEBP_BUILD_WEBP_JS=OFF -DWEBP_BUILD_ANIM_UTILS=OFF -DWEBP_NEAR_LOSSLESS=ON ..
   - cmake --build . --config Release
   - if [ "$TRAVIS_OS_NAME" != "windows" ]; then make install; fi
