@@ -8,7 +8,6 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 #include <webp/encode.h>
 
 typedef int (*Importer)(WebPPicture* const, const uint8_t* const, int);

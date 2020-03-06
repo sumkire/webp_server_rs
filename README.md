@@ -312,7 +312,7 @@ apt install cmake curl
 
 #### 2. download and build libwebp
 ```bash
-# macOS / Linux
+# macOS / Linux, and windows user who has `make`
 make libwebp
 
 # windows
@@ -324,19 +324,22 @@ cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../../deps \
   -DWEBP_BUILD_IMG2WEBP=OFF -DWEBP_BUILD_VWEBP=OFF -DWEBP_BUILD_WEBPINFO=OFF \
   -DWEBP_BUILD_WEBPMUX=OFF -DWEBP_BUILD_EXTRAS=OFF -DWEBP_BUILD_WEBP_JS=OFF \
   -DWEBP_BUILD_ANIM_UTILS=OFF -DWEBP_NEAR_LOSSLESS=ON ..
-cmake --build .
+cmake --build . --config Release
 cmake --install .
 cd ../..
 ```
 
 #### 3. build static webpwrapper library
 ```bash
-# macOS / Linux
-make libwebpwrapper.a
+# macOS / Linux, and windows user who has `make`
+make libwebpwrapper
 
-## windows
-cl -c webpwrapper.c -I./deps/include
-lib webpwrapper.obj /out:lib/webpwrapper.lib
+# windows
+mkdir -p webpwrapper/build
+cd webpwrapper/build
+cmake ..
+cmake --build . --config Release
+cmake --install
 ```
 
 #### 4. build webp-server-rs
