@@ -1,5 +1,5 @@
-# webp-server-rs ![Build Status](https://travis-ci.com/BlueCocoa/webp_server_rs.svg?branch=master)
-Generate WebP image on-the-fly with Rust!
+# webp-server-rs ![Build Status](https://travis-ci.com/webp-sh/webp_server_rs.svg?branch=master)
+Generate WebP image on-the-fly with Rust! Support all main platforms, macOS, Linux and Windows.
 
 ## Background
 
